@@ -1,4 +1,4 @@
-# Satellite Simulator
+# Space Satellite (idk what to call this yet)
 
 A 3D satellite orbital simulation and visualization tool built with Python and PyQt5.
 
