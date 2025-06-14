@@ -39,4 +39,5 @@ python main.py
 1. Click on **File → New simulation**
 2. Configure the planet parameters
 3. Click "Start simulation"
+From there just figure it out yourself lmao have fun!!
 
