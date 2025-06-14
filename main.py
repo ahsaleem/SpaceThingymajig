@@ -2,7 +2,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication
 from src.MainWindow import MainWindow
-
+#hi guys
 def main():
     """
     Main entry point for the application
