@@ -1,6 +1,6 @@
 # Space Satellite (idk what to call this yet)
 
-A 3D satellite orbital simulation and visualization tool built with Python and PyQt5.
+A 3D satellite orbital simulation and visualization tool built with Python and PyQt5, alongside a few pygame files i'm messing around with
 
 
 ## Requirements
@@ -25,6 +25,8 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Extras: otherthingy.py: basic 2 object simulator, can place objects and see how they interract (NOT FINISHED AND VERY BUGGY AND LIMITED)
+chaotic.py: simulates the solar system if it were chaotic (NO INPUTS, VERY BUGGY) i may work on these i may not
 
 ### Basic Controls
 
