@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
             if conf_window.exec_():
                 self.setWindowTitle(self.m_sim_display.sim().name)
                 self.m_sim_display.timer().setInterval(
-                    1000 * self.m_sim_display.sim().dt / self.m_sim_display.sim().speed
+                    int(1000 * self.m_sim_display.sim().dt / self.m_sim_display.sim().speed)
                 )
     
     @pyqtSlot()
