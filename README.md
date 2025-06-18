@@ -1,6 +1,6 @@
 # Space Satellite (idk what to call this yet)
 
-A 3D satellite orbital simulation and visualization tool built with Python and PyQt5, alongside a few pygame files i'm messing around with
+A 3D satellite orbital simulation and visualization tool built with Python and PyQt5
 
 
 ## Requirements
@@ -25,8 +25,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Extras: otherthingy.py: basic 2 object simulator, can place objects and see how they interract (NOT FINISHED AND VERY BUGGY AND LIMITED)
-chaotic.py: simulates the solar system if it were chaotic (NO INPUTS, VERY BUGGY) i may work on these i may not
+## Update 0.3, Satellites:
+- Added option for custom textures for satellites
+- Added option for rotations around x,y or z axis of satellites
+- Adjustable sizes for satellites
+- BUGS: there may be bugs involving rotating, custom textured satellites and other satellites which causes really wonky orbits. I believe the issue has been resolved during development, however there may be ways to re-replicate this issue.
 
 ### Basic Controls
 
