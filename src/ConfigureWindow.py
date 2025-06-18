@@ -8,19 +8,8 @@ from src.Constants import Constants
 from src.Simulation import Simulation
 
 class ConfigureWindow(QDialog):
-    """
-    ConfigureWindow provides a dialog to configure simulation parameters
-    """
     
     def __init__(self, is_new, sim, parent=None):
-        """
-        Initialize the configure window
-        
-        Args:
-            is_new (bool): True if creating a new simulation, False if editing existing
-            sim (Simulation): The simulation to configure
-            parent (QWidget, optional): Parent widget. Defaults to None.
-        """
         super(ConfigureWindow, self).__init__(parent)
         
         self.m_is_new = is_new
@@ -133,41 +122,23 @@ class ConfigureWindow(QDialog):
             if sim.write_log:
                 self.write_log_field.setChecked(True)
         else:
-            # Default simulation name
             self.name_field.setText("New_Simulation")
-            # Default planet name
             self.planet_name_field.setText(Constants.defaultPlanetName)
-            # Default texture path
             self.planet_img_field.setText(Constants.defaultImgPath)
-            # Default planet texture
             self.planet_pix = QPixmap(Constants.defaultImgPath)
             self.planet_label.setPixmap(self.planet_pix.scaled(300, 150))
-            # Default time step
             self.dt_field.setValue(1.0)
-            # Default speed
             self.speed_field.setValue(1.0)
-            # Default planet characteristics (earth)
             self.planet_radius.setValue(Constants.r_earth)
             self.planet_mu.setValue(Constants.mu_earth)
             self.planet_day.setValue(Constants.day_earth)
             
             self.write_log_field.setChecked(Constants.writeLog)
             self.auto_play_field.setChecked(Constants.autoPlay)
-        
-        # Connect signals
+
         self.confirm_button.clicked.connect(self.confirm_slot)
     
     def eventFilter(self, obj, event):
-        """
-        Filter events to handle custom interactions
-        
-        Args:
-            obj (QObject): The object that triggered the event
-            event (QEvent): The event that was triggered
-            
-        Returns:
-            bool: True if the event was handled, False otherwise
-        """
         if obj == self.planet_img_field and event.type() == QEvent.MouseButtonPress:
             img_path = QFileDialog.getOpenFileName(
                 self, 
@@ -185,9 +156,6 @@ class ConfigureWindow(QDialog):
     
     @pyqtSlot()
     def confirm_slot(self):
-        """
-        Handle confirm button click
-        """
         if not self.name_field.text():
             QMessageBox.warning(self, "Empty name", "Please enter a simulation name!")
             return
@@ -195,8 +163,7 @@ class ConfigureWindow(QDialog):
         if not self.planet_name_field.text():
             QMessageBox.warning(self, "Empty name", "Please enter a planet name!")
             return
-            
-        # Update simulation with form values
+        
         self.m_sim.get_planet().set_day(self.planet_day.value())
         self.m_sim.get_planet().set_mu(self.planet_mu.value())
         self.m_sim.get_planet().set_radius(self.planet_radius.value())
@@ -213,11 +180,5 @@ class ConfigureWindow(QDialog):
     
     @pyqtSlot(float)
     def update_speed_limits(self, value):
-        """
-        Update speed limits based on time step
-        
-        Args:
-            value (float): The new time step value
-        """
         self.speed_field.setMinimum(value / Constants.maxTimeStep)
         self.speed_field.setMaximum(value / Constants.minTimeStep)

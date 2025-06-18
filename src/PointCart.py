@@ -3,19 +3,7 @@ from src.Point import Point
 from src.Constants import Constants
 
 class PointCart(Point):
-    """
-    Represents a point in Cartesian coordinates (x, y, z)
-    """
-    
     def __init__(self, x=0.0, y=0.0, z=0.0):
-        """
-        Initialize a Cartesian point
-        
-        Args:
-            x (float, optional): X coordinate. Defaults to 0.0.
-            y (float, optional): Y coordinate. Defaults to 0.0.
-            z (float, optional): Z coordinate. Defaults to 0.0.
-        """
         super(PointCart, self).__init__()
         
         # If the first argument is a Point object, initialize from it
@@ -29,73 +17,28 @@ class PointCart(Point):
             self.m_z = z
     
     def __eq__(self, p):
-        """
-        Equality operator
-        
-        Args:
-            p (Point): Another point to compare with
-            
-        Returns:
-            bool: True if points are equal
-        """
         return (self.m_x == p.get_x() and 
                 self.m_y == p.get_y() and 
                 self.m_z == p.get_z())
     
     def __iadd__(self, p):
-        """
-        In-place addition operator (+=)
-        
-        Args:
-            p (Point): Point to add
-            
-        Returns:
-            PointCart: Self after addition
-        """
         self.m_x += p.get_x()
         self.m_y += p.get_y()
         self.m_z += p.get_z()
         return self
     
     def __isub__(self, p):
-        """
-        In-place subtraction operator (-=)
-        
-        Args:
-            p (Point): Point to subtract
-            
-        Returns:
-            PointCart: Self after subtraction
-        """
         self.m_x -= p.get_x()
         self.m_y -= p.get_y()
         self.m_z -= p.get_z()
         return self
     
     def __add__(self, p):
-        """
-        Addition operator (+)
-        
-        Args:
-            p (Point): Point to add
-            
-        Returns:
-            PointCart: New point representing the sum
-        """
         copy = PointCart(self.m_x, self.m_y, self.m_z)
         copy += p
         return copy
     
     def __sub__(self, p):
-        """
-        Subtraction operator (-)
-        
-        Args:
-            p (Point): Point to subtract
-            
-        Returns:
-            PointCart: New point representing the difference
-        """
         copy = PointCart(self.m_x, self.m_y, self.m_z)
         copy -= p
         return copy
@@ -142,11 +85,6 @@ class PointCart(Point):
             return 3.0 * Constants.pi / 2.0
         if self.m_x > 0.0 and self.m_y < 0.0:
             return Constants.twopi + math.atan(self.m_y / self.m_x)
-        return 0.0
-    
-    def get_phi(self):
-        """Get polar angle (polar coordinate)"""
-        # TODO: Implement this method (was also marked as TODO in C++ version)
         return 0.0
     
     def print(self):

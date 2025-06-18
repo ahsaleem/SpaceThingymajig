@@ -2,12 +2,8 @@ import math
 from src.Constants import Constants
 from src.PointPol import PointPol
 from src.Planet import Planet
-#easter egg
+
 class Orbit:
-    """
-    Represents an orbital trajectory around a planet
-    """
-    
     def __init__(self, planet, a, e, i, omega=0.0, omega_small=0.0, tp=0.0):
         """
         Initialize an orbit with Keplerian elements
@@ -23,8 +19,9 @@ class Orbit:
         """
         self.m_planet = planet
         self.m_mu = planet.get_mu()
-        self.m_a = a
-        self.m_e = e
+        min_a = planet.get_radius() * 1.1  # 10% above surface
+        self.m_a = max(min_a, float(a))
+        self.m_e = max(0.0, min(0.99, float(e)))
         
         # Normalize i to [0, 2π)
         self.m_i = math.fmod(i, Constants.twopi)
@@ -48,16 +45,11 @@ class Orbit:
         self.m_E = 0.0  # Eccentric anomaly
         self.m_M = 0.0  # Mean anomaly
         
+
         # Reset position to initial state
         self.reset()
     
     def __init_from_orbit(self, orbit):
-        """
-        Initialize from another orbit (copy constructor)
-        
-        Args:
-            orbit (Orbit): Orbit to copy
-        """
         self.m_planet = orbit.get_planet()
         self.m_mu = self.m_planet.get_mu()
         self.m_a = orbit.get_a()
@@ -71,23 +63,15 @@ class Orbit:
         self.m_M = orbit.get_m()
     
     def update_position(self, dt):
-        """
-        Update satellite position for a time step
-        
-        Args:
-            dt (float): Time step in seconds
-        """
         # Update mean anomaly
-        self.m_M += self.get_n() * dt
-        self.m_M = math.fmod(self.m_M, Constants.twopi)
-        if self.m_M < 0.0:
-            self.m_M += Constants.twopi
-        
+        new_M = math.fmod(self.m_M + self.get_n() * dt, Constants.twopi)
+        if new_M < 0.0:
+            new_M += Constants.twopi
         # Compute eccentric anomaly E with dichotomy since E - e*sin(E) is crescent
         eps = 1.0e-6
         min_val = 0.0
         max_val = Constants.twopi
-        
+        self.set_m(new_M)
         while (max_val - min_val) > eps:
             mid = 0.5 * (max_val + min_val)
             if self.m_M < mid - self.m_e * math.sin(mid):
@@ -103,16 +87,6 @@ class Orbit:
         else:
             self.m_v = Constants.twopi - math.acos((math.cos(self.m_E) - self.m_e) / (1.0 - self.m_e * math.cos(self.m_E)))
     
-    def update(self, dt):
-        """
-        Update orbit for a time step (for perturbations or maneuvers)
-        
-        Args:
-            dt (float): Time step in seconds
-        """
-        # Update orbit (if perturbation or maneuvers)
-        # Currently empty in original implementation
-        pass
     
     def set_m(self, m):
         """
@@ -153,12 +127,6 @@ class Orbit:
         self.set_m(-self.get_n() * self.m_tp)
     
     def get_position_point(self):
-        """
-        Get the current position of the satellite
-        
-        Returns:
-            PointPol: Position in polar coordinates
-        """
         r = self.m_a * (1.0 - self.m_e * math.cos(self.m_E))
         
         theta = math.fmod(
@@ -182,15 +150,6 @@ class Orbit:
         return PointPol(r, theta, phi)
     
     def get_point_at(self, m):
-        """
-        Get position at a specific mean anomaly
-        
-        Args:
-            m (float): Mean anomaly (rad)
-            
-        Returns:
-            PointPol: Position in polar coordinates
-        """
         # Normalize M to [0, 2π)
         m = math.fmod(m, Constants.twopi)
         if m < 0.0:
@@ -239,14 +198,18 @@ class Orbit:
             phi += Constants.twopi
         
         return PointPol(r, theta, phi)
+    def update(self, dt):
+        """
+        Update orbit for a time step (for perturbations or maneuvers)
+        
+        Args:
+            dt (float): Time step in seconds
+        """
+        # Update orbit (if perturbation or maneuvers)
+        # Currently empty in original implementation
+        pass
     
     def to_string(self):
-        """
-        Convert orbit to string representation
-        
-        Returns:
-            str: String representation of the orbit
-        """
         output = f"a: {self.m_a}\n"
         output += f"e: {self.m_e}\n"
         output += f"i: {self.m_i}\n"
@@ -280,73 +243,55 @@ class Orbit:
     
     # Getter and setter methods
     def get_a(self):
-        """Get semi-major axis"""
         return self.m_a
     
     def set_a(self, a):
-        """Set semi-major axis"""
         self.m_a = a
     
     def get_e(self):
-        """Get eccentricity"""
         return self.m_e
     
     def set_e(self, e):
-        """Set eccentricity"""
         self.m_e = e
     
     def get_i(self):
-        """Get inclination"""
         return self.m_i
     
     def set_i(self, i):
-        """Set inclination"""
         self.m_i = i
     
     def get_omega(self):
-        """Get longitude of ascending node"""
         return self.m_Omega
     
     def set_omega(self, omega):
-        """Set longitude of ascending node"""
         self.m_Omega = omega
     
     def get_omega_small(self):
-        """Get argument of periapsis"""
         return self.m_omega
     
     def set_omega_small(self, omega):
-        """Set argument of periapsis"""
         self.m_omega = omega
     
     def get_n(self):
-        """Get mean motion"""
         return math.sqrt(self.m_mu / math.pow(self.m_a, 3.0))
     
     def get_v(self):
-        """Get true anomaly"""
         return self.m_v
     
     def get_m(self):
-        """Get mean anomaly"""
         return self.m_M
     
     def get_tp(self):
-        """Get epoch"""
         return self.m_tp
     
     def set_tp(self, tp):
-        """Set epoch"""
         self.m_tp = tp
     
     def get_planet(self):
-        """Get the central planet"""
         return self.m_planet
     
     def get_ra(self):
-        """Get apoapsis radius"""
         return self.m_a * (1.0 + self.m_e)
     
     def get_rp(self):
-        """Get periapsis radius"""
         return self.m_a * (1.0 - self.m_e)

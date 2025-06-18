@@ -6,19 +6,7 @@ from src.GuiConstants import GuiConstants
 import sys
 
 class Monitor(QWidget):
-    """
-    Widget that displays simulation information at the bottom of the window
-    """
-    
     def __init__(self, sim, parent=None, refresh_rate=0):
-        """
-        Initialize the monitor widget
-        
-        Args:
-            sim (Simulation): The simulation to monitor
-            parent (QWidget, optional): Parent widget. Defaults to None.
-            refresh_rate (int, optional): Refresh rate in milliseconds. Defaults to 0 (uses simulation rate).
-        """
         super(Monitor, self).__init__(parent)
         
         self.m_sim = sim
@@ -68,12 +56,6 @@ class Monitor(QWidget):
             self.setMinimumSize(parent.width(), GuiConstants.monitorH)
     
     def set_simulation(self, sim):
-        """
-        Set a new simulation to monitor
-        
-        Args:
-            sim (Simulation): The simulation object
-        """
         self.m_sim = sim
         
         if self.m_sim is not None:
@@ -94,23 +76,10 @@ class Monitor(QWidget):
                 self.m_timer.setInterval(int(1000 * self.m_sim.dt / self.m_sim.speed))
     
     def on_resize(self, w, h):
-        """
-        Handle parent widget resize events
-        
-        Args:
-            w (int): New width
-            h (int): New height
-        """
         self.move(0, h - GuiConstants.monitorH)
         self.setMinimumSize(w, GuiConstants.monitorH)
     
     def keyPressEvent(self, event):
-        """
-        Handle key press events
-        
-        Args:
-            event (QKeyEvent): Key event
-        """
         if event.key() == Qt.Key_A:
             print("jcsuej")
             self.move(0, 50)

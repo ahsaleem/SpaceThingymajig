@@ -6,6 +6,7 @@ from PyQt5.QtCore import QDateTime, pyqtSlot, Qt
 import os
 import sys
 from datetime import datetime
+from src.Propulsion import Propulsion
 from src.SimulationDisplay import SimulationDisplay
 from src.GuiConstants import GuiConstants
 from src.Constants import Constants
@@ -16,22 +17,12 @@ from src.Planet import Planet
 from src.Simulation import Simulation
 from src.Orbit import Orbit
 from src.Satellite import Satellite
-from src.Propulsion import Propulsion
 from src.config_manager import ConfigManager
 from src.SatelliteInfoPanel import SatelliteInfoPanel
 
 class MainWindow(QMainWindow):
-    """
-    The main application window, responsible for menus, UI, and interactions
-    """
-    
     def __init__(self, parent=None):
-        """
-        Initialize the main window
-        
-        Args:
-            parent (QWidget, optional): Parent widget. Defaults to None.
-        """
+    
         super(MainWindow, self).__init__(parent)
         
         # Set window properties
@@ -75,12 +66,12 @@ class MainWindow(QMainWindow):
         self.m_sim_display.satellite_selected.connect(self.on_satellite_selected)
     
     def _setup_menus(self):
-        """Set up the application menus and actions"""
         # Create main menus
         self.menu_file = self.menuBar().addMenu("&File")
         self.menu_sim = self.menuBar().addMenu("&Simulation")
         self.menu_sat = self.menuBar().addMenu("&Satellites")
         self.menu_help = self.menuBar().addMenu("&?")
+        
         
         # File menu
         action_new = QAction("&New simulation", self)
@@ -154,6 +145,8 @@ class MainWindow(QMainWindow):
         
         # Connect satellite menu actions
         self.menu_sat.hovered.connect(self.hovered_satellite_slot)
+        
+    
     
     def about_qt(self):
         """Display the Qt About dialog"""
@@ -186,15 +179,18 @@ class MainWindow(QMainWindow):
         """Add a new satellite to the simulation"""
         if self.m_sim_display is not None and self.m_sim_display.sim() is not None:
             self.m_sim_display.sim().set_play(False)
-            
-            # Create initial orbit parameters
+        
+            # Create FRESH orbit parameters
             planet = self.m_sim_display.sim().get_planet()
-            a = planet.get_radius() * 2.0  # Initial semi-major axis
-            e = 0.0  # Initial eccentricity
-            i = 0.0  # Initial inclination
+            a = planet.get_radius() * 2.0
+            e = 0.0
+            i = 0.1  # Small initial inclination to avoid overlap
+            omega = 0.0
+            omega_small = 0.0
+            tp = 0.0
             
-            # Create orbit and satellite
-            orbit = Orbit(planet, a, e, i)
+            # Create NEW Orbit instance
+            orbit = Orbit(planet, a, e, i, omega, omega_small, tp)
             sat = Satellite(orbit, planet, Propulsion())
             
             sat_window = SatelliteWindow(True, sat, planet)

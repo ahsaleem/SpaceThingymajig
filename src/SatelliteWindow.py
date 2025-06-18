@@ -1,7 +1,12 @@
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QFormLayout,
-                           QPushButton, QLineEdit, QDoubleSpinBox, QMessageBox)
-from PyQt5.QtCore import pyqtSlot, QRegExp
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QFormLayout, QComboBox,
+                           QPushButton, QLineEdit, QDoubleSpinBox, QMessageBox, QWidget, QScrollArea)
+from PyQt5.QtCore import pyqtSlot, QRegExp, Qt
 from PyQt5.QtGui import QRegExpValidator
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QFormLayout,
+                           QPushButton, QLineEdit, QDoubleSpinBox, QMessageBox,
+                           QHBoxLayout, QLabel, QFileDialog)
+from PyQt5.QtGui import QPixmap
+import os
 import math
 from src.Constants import Constants
 from src.Satellite import Satellite
@@ -28,13 +33,21 @@ class SatelliteWindow(QDialog):
         self.m_is_new = is_new
         self.m_sat = sat
         self.m_planet = planet
-        
-        # Set window properties
+
         self.setModal(True)
         self.setWindowTitle("Configure satellite")
-        
-        # Create layout
-        self.main_layout = QVBoxLayout()
+        self.setFixedSize(500, 700)  # Fixed size for scrollable window
+
+        # Outer layout that contains everything
+        outer_layout = QVBoxLayout(self)
+
+        # Scroll area setup
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+
+        # Scrollable container widget and layout
+        scroll_content = QWidget()
+        self.main_layout = QVBoxLayout(scroll_content) 
         self.sat_frame = QGroupBox("General information", self)
         self.orb_frame = QGroupBox("Orbit", self)
         self.att_frame = QGroupBox("Attitude", self)
@@ -158,19 +171,87 @@ class SatelliteWindow(QDialog):
         self.rz_box.setToolTip(f"[{self.rz_box.minimum()}, {self.rz_box.maximum()}]")
         self.att_form.addRow("Rotation around Z axis (rad):", self.rz_box)
         
-        # Propulsion section (TODO)
+        # Add Appearance group
+        self.appearance_group = QGroupBox("Appearance")
+        self.appearance_layout = QFormLayout()
         
+        # Size control
+        self.size_spin = QDoubleSpinBox()
+        self.size_spin.setRange(0.1, 50.0)
+        self.size_spin.setSingleStep(0.1)
+        self.size_spin.setValue(1.0)
+        self.appearance_layout.addRow("Size scaling:", self.size_spin)
+        
+        # Texture selection
+        self.texture_field = QLineEdit()
+        self.texture_field.setReadOnly(True)
+        self.browse_button = QPushButton("Browse...")
+        
+        texture_layout = QHBoxLayout()
+        texture_layout.addWidget(self.texture_field)
+        texture_layout.addWidget(self.browse_button)
+        self.appearance_layout.addRow("Texture:", texture_layout)
+        
+        # Texture preview
+        self.preview_label = QLabel()
+        self.preview_label.setFixedSize(100, 100)
+        self.preview_label.setScaledContents(True)
+        self.appearance_layout.addRow("Preview:", self.preview_label)
+        
+        self.appearance_group.setLayout(self.appearance_layout)
+        self.main_layout.addWidget(self.appearance_group)
+        
+        # Connect signals
+        self.browse_button.clicked.connect(self.browse_texture)
+        
+        # Set existing values if editing
+        if not is_new:
+            self.size_spin.setValue(sat.get_size())
+            if sat.has_texture():
+                self.texture_field.setText(sat.get_texture_path())
+                self.update_preview(sat.get_texture_path())
+        self.rotation_group = QGroupBox("Rotation")
+        self.rotation_layout = QFormLayout()
+
+        # Axis selection
+        self.rotation_axis_combo = QComboBox()
+        self.rotation_axis_combo.addItems(["X-axis", "Y-axis", "Z-axis"])
+        self.rotation_layout.addRow("Rotation Axis:", self.rotation_axis_combo)
+
+        self.rotation_speed_spin = QDoubleSpinBox()
+        self.rotation_speed_spin.setRange(-2.0, 2.0)
+        self.rotation_speed_spin.setSingleStep(0.1)
+        self.rotation_speed_spin.setValue(0.0)
+        self.appearance_layout.addRow("Rotation speed (rad/s):", self.rotation_speed_spin)
+
+        self.rotation_group.setLayout(self.rotation_layout)
+        self.main_layout.addWidget(self.rotation_group)
+        if not is_new and sat.has_texture():
+    # Set default axis to Z if no rotation was set (backwards compatibility)
+            if sat.get_rx() != 0:
+                self.rotation_axis_combo.setCurrentIndex(0)  # X-axis
+                self.rotation_speed_spin.setValue(sat.get_rx())
+            elif sat.get_ry() != 0:
+                self.rotation_axis_combo.setCurrentIndex(1)  # Y-axis
+                self.rotation_speed_spin.setValue(sat.get_ry())
+            elif sat.get_rz() != 0:
+                self.rotation_axis_combo.setCurrentIndex(2)  # Z-axis
+                self.rotation_speed_spin.setValue(sat.get_rz())
+            else:
+                self.rotation_axis_combo.setCurrentIndex(2)
+            # Set existing value if editing
+        scroll_area.setWidget(scroll_content)
+        outer_layout.addWidget(scroll_area)
         # Confirm button
         self.confirm_button = QPushButton()
-        if is_new:
-            self.confirm_button.setText("Add satellite")
-        else:
-            self.confirm_button.setText("Apply")
+        self.confirm_button.setText("Add satellite" if is_new else "Apply")
         self.confirm_button.setDefault(True)
-        self.main_layout.addWidget(self.confirm_button)
-        
+        outer_layout.addWidget(self.confirm_button)
+
+        # Final layout setup
+        self.setLayout(outer_layout)
         # Set the layout
-        self.setLayout(self.main_layout)
+
         
         # If existing satellite, use its values in form, else default values
         if not is_new:
@@ -204,7 +285,20 @@ class SatelliteWindow(QDialog):
         self.a_box.valueChanged.connect(self.on_a_changed)
         self.e_box.valueChanged.connect(self.on_e_changed)
         self.confirm_button.clicked.connect(self.confirm_slot)
+
+    def browse_texture(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Satellite Texture", 
+            "", "Images (*.png *.jpg *.jpeg *.bmp)")
+        if path:
+            self.texture_field.setText(path)
+            self.update_preview(path)
     
+    def update_preview(self, path):
+        if os.path.exists(path):
+            pixmap = QPixmap(path)
+            self.preview_label.setPixmap(pixmap.scaled(
+                100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
     @pyqtSlot(float)
     def on_a_changed(self, a):
         """
@@ -249,9 +343,25 @@ class SatelliteWindow(QDialog):
         self.m_sat.get_orbit().set_omega(self.om_box.value())
         self.m_sat.get_orbit().set_omega_small(self.om_small_box.value())
         self.m_sat.get_orbit().set_tp(self.tp_box.value())
-        self.m_sat.set_rx(self.rx_box.value())
-        self.m_sat.set_ry(self.ry_box.value())
-        self.m_sat.set_rz(self.rz_box.value())
+        selected_axis = self.rotation_axis_combo.currentIndex()
+        rotation_speed = self.rotation_speed_spin.value()
+        
+        # Reset all rotation speeds first
+        self.m_sat.set_rx(0.0)
+        self.m_sat.set_ry(0.0)
+        self.m_sat.set_rz(0.0)
+        
+        # Set rotation for selected axis
+        if selected_axis == 0:  # X-axis
+            self.m_sat.set_rx(rotation_speed)
+        elif selected_axis == 1:  # Y-axis
+            self.m_sat.set_ry(rotation_speed)
+        else:  # Z-axis
+            self.m_sat.set_rz(rotation_speed)
+        self.m_sat.set_size(self.size_spin.value())
+        self.m_sat.set_texture_path(self.texture_field.text())
+        if self.texture_field.text():
+            self.m_sat.set_rotation_speed(self.rotation_speed_spin.value())
         
         self.done(QDialog.Accepted)
 

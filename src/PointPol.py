@@ -8,55 +8,23 @@ class PointPol(Point):
     """
     
     def __init__(self, r=0.0, theta=0.0, phi=0.0):
-        """
-        Initialize a polar point
-        
-        Args:
-            r (float, optional): Radius. Defaults to 0.0.
-            theta (float, optional): Azimuthal angle in radians. Defaults to 0.0.
-            phi (float, optional): Polar angle in radians. Defaults to 0.0.
-        """
         super(PointPol, self).__init__()
         self.m_r = r
         self.m_theta = theta
         self.m_phi = phi
     
     def __init_from_point(self, p):
-        """
-        Initialize from another Point
-        
-        Args:
-            p (Point): Another point object
-        """
         self.m_r = p.get_r()
         self.m_theta = p.get_theta()
         self.m_phi = p.get_phi()
     
     # Python's special methods for operator overloading
     def __eq__(self, p):
-        """
-        Equality operator
-        
-        Args:
-            p (Point): Another point to compare with
-            
-        Returns:
-            bool: True if points are equal
-        """
         return (self.m_r == p.get_r() and 
                 self.m_theta == p.get_theta() and 
                 self.m_phi == p.get_phi())
     
     def __iadd__(self, p):
-        """
-        In-place addition operator (+=)
-        
-        Args:
-            p (Point): Point to add
-            
-        Returns:
-            PointPol: Self after addition
-        """
         # Create cartesian copy of point to use adding operator
         tmp = PointCart(self)
         tmp += p
@@ -69,15 +37,6 @@ class PointPol(Point):
         return self
     
     def __isub__(self, p):
-        """
-        In-place subtraction operator (-=)
-        
-        Args:
-            p (Point): Point to subtract
-            
-        Returns:
-            PointPol: Self after subtraction
-        """
         # Create cartesian copy of point to use subtraction operator
         tmp = PointCart(self)
         tmp -= p
@@ -90,30 +49,12 @@ class PointPol(Point):
         return self
     
     def __add__(self, p):
-        """
-        Addition operator (+)
-        
-        Args:
-            p (Point): Point to add
-            
-        Returns:
-            PointPol: New point representing the sum
-        """
         copy = PointPol(0)
         copy.__init_from_point(self)
         copy += p
         return copy
     
     def __sub__(self, p):
-        """
-        Subtraction operator (-)
-        
-        Args:
-            p (Point): Point to subtract
-            
-        Returns:
-            PointPol: New point representing the difference
-        """
         copy = PointPol(0)
         copy.__init_from_point(self)
         copy -= p

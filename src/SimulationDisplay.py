@@ -6,6 +6,7 @@ from PyQt5.QtOpenGL import QGLWidget
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
+from src.SatelliteWindow import SatelliteWindow
 from src.SimulationGL import SimulationGL
 from src.Simulation import Simulation
 from src.GuiConstants import GuiConstants
@@ -42,6 +43,7 @@ class SimulationDisplay(SimulationGL):
         self.m_selected_sat = None
         self.is_dragging = False
         self.highlighted_sat = None  # Track highlighted satellite
+        self.loaded_textures = {}
         
         # Always initialize the camera
         self.m_camera = TrackBallCamera()
@@ -312,237 +314,258 @@ class SimulationDisplay(SimulationGL):
             # Draw each satellite
             for i in range(self.m_sim.nsat()):
                 sat = self.m_sim.sat(i)
-                
-                # Check if this satellite is highlighted
-                is_highlighted = (sat == self.highlighted_sat)
-                
-                # Satellite size, scaled
-                s = 300.0 * scale
-                
-                # Get position
-                pos = sat.get_current_position()
-                x = float(pos.get_x())
-                y = float(pos.get_y())
-                z = float(pos.get_z())
-                
-                # Scale position
-                x *= scale
-                y *= scale
-                z *= scale
-                
-                # Draw orbit ellipse
-                self.draw_ellipse(sat.get_orbit(), scale, i, self.m_sim.nsat())
-                
-                # Set color based on highlight status
-                if is_highlighted:
-                    glColor3d(1.0, 1.0, 0.0)  # Yellow highlight
-                    # Draw highlight outline
-                    glPushMatrix()
+                try:
+                    pos = sat.get_current_position()
+                    # Check if this satellite is highlighted
+                    is_highlighted = (sat == self.highlighted_sat)
+                    
+                    # Satellite size, scaled
+                    s = 300.0 * scale * sat.get_size()
+                    
+                    # Get position
+                    pos = sat.get_current_position()
+                    x = float(pos.get_x())
+                    y = float(pos.get_y())
+                    z = float(pos.get_z())
+                    
+                    # Scale position
+                    x *= scale
+                    y *= scale
+                    z *= scale
+                    
+                    # Draw orbit ellipse
+                    self.draw_ellipse(sat.get_orbit(), scale, i, self.m_sim.nsat())
+                    
+                    # Set color based on highlight status
+                    if is_highlighted:
+                        glColor3d(1.0, 1.0, 0.0)  # Yellow highlight
+                        # Draw highlight outline
+                        glPushMatrix()
+                        glTranslatef(y, z, x)
+                        glScalef(1.2, 1.2, 1.2)  # Make highlight slightly larger
+                        
+                        # Draw wireframe box using GL_LINES
+                        glDisable(GL_TEXTURE_2D)
+                        glDisable(GL_LIGHTING)
+                        glLineWidth(2.0)  # Make lines thicker
+                        
+                        glBegin(GL_LINES)
+                        # Front face
+                        glVertex3f(-s, -s, s)
+                        glVertex3f(s, -s, s)
+                        glVertex3f(s, -s, s)
+                        glVertex3f(s, s, s)
+                        glVertex3f(s, s, s)
+                        glVertex3f(-s, s, s)
+                        glVertex3f(-s, s, s)
+                        glVertex3f(-s, -s, s)
+                        
+                        # Back face
+                        glVertex3f(-s, -s, -s)
+                        glVertex3f(s, -s, -s)
+                        glVertex3f(s, -s, -s)
+                        glVertex3f(s, s, -s)
+                        glVertex3f(s, s, -s)
+                        glVertex3f(-s, s, -s)
+                        glVertex3f(-s, s, -s)
+                        glVertex3f(-s, -s, -s)
+                        
+                        # Connecting lines
+                        glVertex3f(-s, -s, s)
+                        glVertex3f(-s, -s, -s)
+                        glVertex3f(s, -s, s)
+                        glVertex3f(s, -s, -s)
+                        glVertex3f(s, s, s)
+                        glVertex3f(s, s, -s)
+                        glVertex3f(-s, s, s)
+                        glVertex3f(-s, s, -s)
+                        glEnd()
+                        
+                        glLineWidth(1.0)  # Reset line width
+                        glEnable(GL_LIGHTING)
+                        glEnable(GL_TEXTURE_2D)
+                        glPopMatrix()
+                    
+                    glColor3d(1.0, 1.0, 1.0)  # Reset color
+                    
+                    # Translate to satellite position
                     glTranslatef(y, z, x)
-                    glScalef(1.2, 1.2, 1.2)  # Make highlight slightly larger
                     
-                    # Draw wireframe box using GL_LINES
+                    # Draw inertial axes at satellite position
                     glDisable(GL_TEXTURE_2D)
-                    glDisable(GL_LIGHTING)
-                    glLineWidth(2.0)  # Make lines thicker
-                    
                     glBegin(GL_LINES)
-                    # Front face
-                    glVertex3f(-s, -s, s)
-                    glVertex3f(s, -s, s)
-                    glVertex3f(s, -s, s)
-                    glVertex3f(s, s, s)
-                    glVertex3f(s, s, s)
-                    glVertex3f(-s, s, s)
-                    glVertex3f(-s, s, s)
-                    glVertex3f(-s, -s, s)
                     
-                    # Back face
-                    glVertex3f(-s, -s, -s)
-                    glVertex3f(s, -s, -s)
-                    glVertex3f(s, -s, -s)
-                    glVertex3f(s, s, -s)
-                    glVertex3f(s, s, -s)
-                    glVertex3f(-s, s, -s)
-                    glVertex3f(-s, s, -s)
-                    glVertex3f(-s, -s, -s)
+                    # Inertial X (red)
+                    glColor3d(1.0, 0.0, 0.0)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(0.0, 0.0, 3.0 * s)
                     
-                    # Connecting lines
-                    glVertex3f(-s, -s, s)
-                    glVertex3f(-s, -s, -s)
-                    glVertex3f(s, -s, s)
-                    glVertex3f(s, -s, -s)
-                    glVertex3f(s, s, s)
-                    glVertex3f(s, s, -s)
-                    glVertex3f(-s, s, s)
-                    glVertex3f(-s, s, -s)
+                    # Inertial Y (green)
+                    glColor3d(0.0, 1.0, 0.0)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(3.0 * s, 0.0, 0.0)
+                    
+                    # Inertial Z (blue)
+                    glColor3d(0.0, 0.0, 1.0)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(0.0, 3.0 * s, 0.0)
+                    
                     glEnd()
-                    
-                    glLineWidth(1.0)  # Reset line width
-                    glEnable(GL_LIGHTING)
+                    glColor3d(1.0, 1.0, 1.0)
                     glEnable(GL_TEXTURE_2D)
-                    glPopMatrix()
-                
-                glColor3d(1.0, 1.0, 1.0)  # Reset color
-                
-                # Translate to satellite position
-                glTranslatef(y, z, x)
-                
-                # Draw inertial axes at satellite position
-                glDisable(GL_TEXTURE_2D)
-                glBegin(GL_LINES)
-                
-                # Inertial X (red)
-                glColor3d(1.0, 0.0, 0.0)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(0.0, 0.0, 3.0 * s)
-                
-                # Inertial Y (green)
-                glColor3d(0.0, 1.0, 0.0)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(3.0 * s, 0.0, 0.0)
-                
-                # Inertial Z (blue)
-                glColor3d(0.0, 0.0, 1.0)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(0.0, 3.0 * s, 0.0)
-                
-                glEnd()
-                glColor3d(1.0, 1.0, 1.0)
-                glEnable(GL_TEXTURE_2D)
-                
-                # Rotate according to satellite attitude
-                angle1 = 180.0 / Constants.pi * self.m_sim.sat(i).get_ry()
-                angle2 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rz()
-                angle3 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rx()
-                
-                glRotatef(angle1, 1.0, 0.0, 0.0)
-                glRotatef(angle2, 0.0, 1.0, 0.0)
-                glRotatef(angle3, 0.0, 0.0, 1.0)
-                
-                # Draw satellite axes
-                glDisable(GL_TEXTURE_2D)
-                glBegin(GL_LINES)
-                
-                # Satellite X (light red)
-                glColor3d(1.0, 0.5, 0.5)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(0.0, 0.0, 3.0 * s)
-                
-                # Satellite Y (light green)
-                glColor3d(0.5, 1.0, 0.5)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(3.0 * s, 0.0, 0.0)
-                
-                # Satellite Z (light blue)
-                glColor3d(0.5, 0.5, 1.0)
-                glVertex3d(0.0, 0.0, 0.0)
-                glVertex3d(0.0, 3.0 * s, 0.0)
-                
-                glEnd()
-                glColor3d(1.0, 1.0, 1.0)
-                glEnable(GL_TEXTURE_2D)
-                
-                # Draw satellite body
-                glBindTexture(GL_TEXTURE_2D, self.texture[2])
-                glBegin(GL_QUADS)
-                
-                # Front face
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(-1.0 * s, -1.0 * s, s)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(s, -1.0 * s, s)
-                glTexCoord2f(s, s)
-                glVertex3f(s, s, s)
-                glTexCoord2f(0.0, s)
-                glVertex3f(-1.0 * s, s, s)
-                
-                # Back face
-                glTexCoord2f(s, 0.0)
-                glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                glTexCoord2f(s, s)
-                glVertex3f(-1.0 * s, s, -1.0 * s)
-                glTexCoord2f(0.0, s)
-                glVertex3f(s, s, -1.0 * s)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(s, -1.0 * s, -1.0 * s)
-                
-                # Top face
-                glTexCoord2f(0.0, s)
-                glVertex3f(-1.0 * s, s, -1.0 * s)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(-1.0 * s, s, s)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(s, s, s)
-                glTexCoord2f(s, s)
-                glVertex3f(s, s, -1.0 * s)
-                
-                # Bottom face
-                glTexCoord2f(s, s)
-                glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                glTexCoord2f(0.0, s)
-                glVertex3f(s, -1.0 * s, -1.0 * s)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(s, -1.0 * s, s)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(-1.0 * s, -1.0 * s, s)
-                
-                # Right face
-                glTexCoord2f(s, 0.0)
-                glVertex3f(s, -1.0 * s, -1.0 * s)
-                glTexCoord2f(s, s)
-                glVertex3f(s, s, -1.0 * s)
-                glTexCoord2f(0.0, s)
-                glVertex3f(s, s, s)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(s, -1.0 * s, s)
-                
-                # Left face
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(-1.0 * s, -1.0 * s, s)
-                glTexCoord2f(s, s)
-                glVertex3f(-1.0 * s, s, s)
-                glTexCoord2f(0.0, s)
-                glVertex3f(-1.0 * s, s, -1.0 * s)
-                
-                glEnd()
-                
-                # Draw solar panels
-                glBindTexture(GL_TEXTURE_2D, self.texture[3])
-                
-                # Left panel
-                glBegin(GL_QUADS)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(-5.0 * s, -0.8 * s, 0.0)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(-1.2 * s, -0.8 * s, 0.0)
-                glTexCoord2f(s, s)
-                glVertex3f(-1.2 * s, 0.8 * s, 0.0)
-                glTexCoord2f(0.0, s)
-                glVertex3f(-5.0 * s, 0.8 * s, 0.0)
-                glEnd()
-                
-                # Right panel
-                glBegin(GL_QUADS)
-                glTexCoord2f(0.0, 0.0)
-                glVertex3f(1.2 * s, -0.8 * s, 0.0)
-                glTexCoord2f(s, 0.0)
-                glVertex3f(5.0 * s, -0.8 * s, 0.0)
-                glTexCoord2f(s, s)
-                glVertex3f(5.0 * s, 0.8 * s, 0.0)
-                glTexCoord2f(0.0, s)
-                glVertex3f(1.2 * s, 0.8 * s, 0.0)
-                glEnd()
-                
-                # Rotate back to draw next satellite
-                glRotatef(-angle3, 0.0, 0.0, 1.0)
-                glRotatef(-angle2, 0.0, 1.0, 0.0)
-                glRotatef(-angle1, 1.0, 0.0, 0.0)
-                
-                # Translate back to draw next satellite
-                glTranslatef(-y, -z, -x)
+                    
+                    # Rotate according to satellite attitude
+                    angle1 = 180.0 / Constants.pi * self.m_sim.sat(i).get_ry()
+                    angle2 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rz()
+                    angle3 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rx()
+                    
+                    glRotatef(angle1, 1.0, 0.0, 0.0)
+                    glRotatef(angle2, 0.0, 1.0, 0.0)
+                    glRotatef(angle3, 0.0, 0.0, 1.0)
+                    
+                    # Draw satellite axes
+                    glDisable(GL_TEXTURE_2D)
+                    glBegin(GL_LINES)
+                    
+                    # Satellite X (light red)
+                    glColor3d(1.0, 0.5, 0.5)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(0.0, 0.0, 3.0 * s)
+                    
+                    # Satellite Y (light green)
+                    glColor3d(0.5, 1.0, 0.5)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(3.0 * s, 0.0, 0.0)
+                    
+                    # Satellite Z (light blue)
+                    glColor3d(0.5, 0.5, 1.0)
+                    glVertex3d(0.0, 0.0, 0.0)
+                    glVertex3d(0.0, 3.0 * s, 0.0)
+                    
+                    glEnd()
+                    glColor3d(1.0, 1.0, 1.0)
+                    glEnable(GL_TEXTURE_2D)
+                    if sat.has_texture():
+                        # Load texture if needed
+                        tex_path = sat.get_texture_path()
+                        if tex_path not in self.loaded_textures:
+                            self._load_texture(tex_path)
+                        glPushMatrix()  # Save current matrix state
+                        glBindTexture(GL_TEXTURE_2D, self.loaded_textures[tex_path])
+                        quadric = gluNewQuadric()
+                        gluQuadricTexture(quadric, GL_TRUE)
+                        if sat.get_rx() != 0:
+                            glRotatef(math.degrees(sat.get_rotation()), 1, 0, 0)
+                        elif sat.get_ry() != 0:
+                            glRotatef(math.degrees(sat.get_rotation()), 0, 1, 0)
+                        else:  # Default to Z-axis
+                            glRotatef(math.degrees(sat.get_rotation()), 0, 0, 1)
+                        gluSphere(quadric, s/2, 32, 32)
+                        gluDeleteQuadric(quadric)
+                        glPopMatrix()
+                    else:
+                    # Draw satellite body
+                        glBindTexture(GL_TEXTURE_2D, self.texture[2])
+                        glBegin(GL_QUADS)
+                        
+                        # Front face
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(-1.0 * s, -1.0 * s, s)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(s, -1.0 * s, s)
+                        glTexCoord2f(s, s)
+                        glVertex3f(s, s, s)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(-1.0 * s, s, s)
+                        
+                        # Back face
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                        glTexCoord2f(s, s)
+                        glVertex3f(-1.0 * s, s, -1.0 * s)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(s, s, -1.0 * s)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(s, -1.0 * s, -1.0 * s)
+                        
+                        # Top face
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(-1.0 * s, s, -1.0 * s)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(-1.0 * s, s, s)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(s, s, s)
+                        glTexCoord2f(s, s)
+                        glVertex3f(s, s, -1.0 * s)
+                        
+                        # Bottom face
+                        glTexCoord2f(s, s)
+                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(s, -1.0 * s, -1.0 * s)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(s, -1.0 * s, s)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(-1.0 * s, -1.0 * s, s)
+                        
+                        # Right face
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(s, -1.0 * s, -1.0 * s)
+                        glTexCoord2f(s, s)
+                        glVertex3f(s, s, -1.0 * s)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(s, s, s)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(s, -1.0 * s, s)
+                        
+                        # Left face
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(-1.0 * s, -1.0 * s, s)
+                        glTexCoord2f(s, s)
+                        glVertex3f(-1.0 * s, s, s)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(-1.0 * s, s, -1.0 * s)
+                        
+                        glEnd()
+                        
+                        # Draw solar panels
+                        glBindTexture(GL_TEXTURE_2D, self.texture[3])
+                        
+                        # Left panel
+                        glBegin(GL_QUADS)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(-5.0 * s, -0.8 * s, 0.0)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(-1.2 * s, -0.8 * s, 0.0)
+                        glTexCoord2f(s, s)
+                        glVertex3f(-1.2 * s, 0.8 * s, 0.0)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(-5.0 * s, 0.8 * s, 0.0)
+                        glEnd()
+                        
+                        # Right panel
+                        glBegin(GL_QUADS)
+                        glTexCoord2f(0.0, 0.0)
+                        glVertex3f(1.2 * s, -0.8 * s, 0.0)
+                        glTexCoord2f(s, 0.0)
+                        glVertex3f(5.0 * s, -0.8 * s, 0.0)
+                        glTexCoord2f(s, s)
+                        glVertex3f(5.0 * s, 0.8 * s, 0.0)
+                        glTexCoord2f(0.0, s)
+                        glVertex3f(1.2 * s, 0.8 * s, 0.0)
+                        glEnd()
+                        
+                    # Rotate back to draw next satellite
+                    glRotatef(-angle3, 0.0, 0.0, 1.0)
+                    glRotatef(-angle2, 0.0, 1.0, 0.0)
+                    glRotatef(-angle1, 1.0, 0.0, 0.0)
+                    
+                    # Translate back to draw next satellite
+                    glTranslatef(-y, -z, -x)
+                except Exception as e:
+                    print(f"Error rendering satellite {sat.get_name()}: {str(e)}")
     
     def sim(self):
         """Get the simulation object"""
@@ -592,7 +615,25 @@ class SimulationDisplay(SimulationGL):
         
         # Pass event to the parent class
         super(SimulationDisplay, self).keyPressEvent(event)
-    
+    def _load_texture(self, path):
+        """Load a texture using same method as planets"""
+        if path in self.loaded_textures:
+            return
+            
+        try:
+            qimg = QImage(path).convertToFormat(QImage.Format_RGBA8888)
+            qimg = qimg.mirrored(False, True)
+            
+            tex_id = glGenTextures(1)
+            glBindTexture(GL_TEXTURE_2D, tex_id)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, qimg.width(), qimg.height(),
+                        0, GL_RGBA, GL_UNSIGNED_BYTE, qimg.bits().asstring(qimg.byteCount()))
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            
+            self.loaded_textures[path] = tex_id
+        except Exception as e:
+            print(f"Error loading texture {path}: {str(e)}")
     def mousePressEvent(self, event):
         """
         Handle mouse press events
