@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QFormLayout,
                            QPushButton, QLineEdit, QDoubleSpinBox, QMessageBox,
                            QHBoxLayout, QLabel, QFileDialog)
 from PyQt5.QtGui import QPixmap
+from src.OrbitPreviewWidget import OrbitPreviewWidget
 import os
 import math
 from src.Constants import Constants
@@ -51,25 +52,22 @@ class SatelliteWindow(QDialog):
         self.sat_frame = QGroupBox("General information", self)
         self.orb_frame = QGroupBox("Orbit", self)
         self.att_frame = QGroupBox("Attitude", self)
-        self.prop_frame = QGroupBox("Propulsion engine", self)
         
         # Add frames to layout
         self.main_layout.addWidget(self.sat_frame)
         self.main_layout.addWidget(self.orb_frame)
         self.main_layout.addWidget(self.att_frame)
-        self.main_layout.addWidget(self.prop_frame)
-        
+       
         # Create form layouts
         self.sat_form = QFormLayout(self.sat_frame)
         self.orb_form = QFormLayout(self.orb_frame)
         self.att_form = QFormLayout(self.att_frame)
-        self.prop_form = QFormLayout(self.prop_frame)
         
         # General information section
         self.sat_name_field = QLineEdit()
         
         # Set validator to prevent spaces and brackets
-        filter_regex = QRegExp("^[^\]\[ ]+$")
+        filter_regex = QRegExp("^[^/\\[\\] ]+$")
         validator = QRegExpValidator(filter_regex)
         self.sat_name_field.setValidator(validator)
         
@@ -86,9 +84,7 @@ class SatelliteWindow(QDialog):
         
         # Connect NORAD button
         self.import_from_norad_button.clicked.connect(self.import_from_norad_slot)
-    
         
-        # Orbit section
         # Semi-major axis
         self.a_box = QDoubleSpinBox()
         self.a_box.setDecimals(3)
@@ -142,9 +138,16 @@ class SatelliteWindow(QDialog):
         self.tp_box.setRange(-period, period)
         self.tp_box.setToolTip(f"[{self.tp_box.minimum()}, {self.tp_box.maximum()}]")
         self.orb_form.addRow("Epoch (s) - can be negative:", self.tp_box)
+
+        self.orbit_preview = OrbitPreviewWidget(planet)
+        self.orbit_preview.setMinimumSize(300, 300)
+        self.orb_form.addRow(self.orbit_preview)
+    
+        self.a_box.valueChanged.connect(self.update_orbit_preview)
+        self.e_box.valueChanged.connect(self.update_orbit_preview)
         
+        self.orbit_preview.orbit_changed.connect(self.on_preview_changed)
         # Attitude section
-        # Rotation around X
         self.rx_box = QDoubleSpinBox()
         self.rx_box.setDecimals(4)
         self.rx_box.setSingleStep(0.1)
@@ -210,7 +213,7 @@ class SatelliteWindow(QDialog):
             if sat.has_texture():
                 self.texture_field.setText(sat.get_texture_path())
                 self.update_preview(sat.get_texture_path())
-        self.rotation_group = QGroupBox("Rotation")
+        self.rotation_group = QGroupBox("Day Length")
         self.rotation_layout = QFormLayout()
 
         # Axis selection
@@ -218,27 +221,35 @@ class SatelliteWindow(QDialog):
         self.rotation_axis_combo.addItems(["X-axis", "Y-axis", "Z-axis"])
         self.rotation_layout.addRow("Rotation Axis:", self.rotation_axis_combo)
 
-        self.rotation_speed_spin = QDoubleSpinBox()
-        self.rotation_speed_spin.setRange(-2.0, 2.0)
-        self.rotation_speed_spin.setSingleStep(0.1)
-        self.rotation_speed_spin.setValue(0.0)
-        self.appearance_layout.addRow("Rotation speed (rad/s):", self.rotation_speed_spin)
+        self.rotation_period_spin = QDoubleSpinBox()
+        self.rotation_period_spin.setRange(0.0, 1000000.0)  # 0 to 1,000,000 seconds
+        self.rotation_period_spin.setSuffix(" s")
+        self.rotation_period_spin.setSpecialValueText("No rotation")  # Shows when value is 0
+        self.rotation_period_spin.setSingleStep(1.0)
+        self.rotation_period_spin.setValue(0.0)  # Default to no rotation
+        self.rotation_layout.addRow("Rotation period (day length):", self.rotation_period_spin)
 
         self.rotation_group.setLayout(self.rotation_layout)
         self.main_layout.addWidget(self.rotation_group)
-        if not is_new and sat.has_texture():
-    # Set default axis to Z if no rotation was set (backwards compatibility)
+
+        # Set existing values if editing
+        if not is_new:
+            # Determine which axis has rotation and set the UI accordingly
             if sat.get_rx() != 0:
                 self.rotation_axis_combo.setCurrentIndex(0)  # X-axis
-                self.rotation_speed_spin.setValue(sat.get_rx())
+                period = 0 if sat.get_rx() == 0 else (2 * math.pi) / abs(sat.get_rx())
+                self.rotation_period_spin.setValue(period)
             elif sat.get_ry() != 0:
                 self.rotation_axis_combo.setCurrentIndex(1)  # Y-axis
-                self.rotation_speed_spin.setValue(sat.get_ry())
+                period = 0 if sat.get_ry() == 0 else (2 * math.pi) / abs(sat.get_ry())
+                self.rotation_period_spin.setValue(period)
             elif sat.get_rz() != 0:
                 self.rotation_axis_combo.setCurrentIndex(2)  # Z-axis
-                self.rotation_speed_spin.setValue(sat.get_rz())
+                period = 0 if sat.get_rz() == 0 else (2 * math.pi) / abs(sat.get_rz())
+                self.rotation_period_spin.setValue(period)
             else:
-                self.rotation_axis_combo.setCurrentIndex(2)
+                self.rotation_axis_combo.setCurrentIndex(2)  # Default to Z-axis
+                self.rotation_period_spin.setValue(0.0)
             # Set existing value if editing
         scroll_area.setWidget(scroll_content)
         outer_layout.addWidget(scroll_area)
@@ -250,9 +261,7 @@ class SatelliteWindow(QDialog):
 
         # Final layout setup
         self.setLayout(outer_layout)
-        # Set the layout
-
-        
+  
         # If existing satellite, use its values in form, else default values
         if not is_new:
             self.sat_name_field.setText(self.m_sat.get_name())
@@ -344,24 +353,22 @@ class SatelliteWindow(QDialog):
         self.m_sat.get_orbit().set_omega_small(self.om_small_box.value())
         self.m_sat.get_orbit().set_tp(self.tp_box.value())
         selected_axis = self.rotation_axis_combo.currentIndex()
-        rotation_speed = self.rotation_speed_spin.value()
-        
-        # Reset all rotation speeds first
+        period = self.rotation_period_spin.value()
         self.m_sat.set_rx(0.0)
         self.m_sat.set_ry(0.0)
         self.m_sat.set_rz(0.0)
-        
-        # Set rotation for selected axis
-        if selected_axis == 0:  # X-axis
-            self.m_sat.set_rx(rotation_speed)
-        elif selected_axis == 1:  # Y-axis
-            self.m_sat.set_ry(rotation_speed)
-        else:  # Z-axis
-            self.m_sat.set_rz(rotation_speed)
+        if period > 0:
+            angular_velocity = (2 * math.pi) / period
+            if selected_axis == 0:  # X-axis
+                self.m_sat.set_rx(angular_velocity)
+            elif selected_axis == 1:  # Y-axis
+                self.m_sat.set_ry(angular_velocity)
+            else:  # Z-axis
+                self.m_sat.set_rz(angular_velocity)
         self.m_sat.set_size(self.size_spin.value())
         self.m_sat.set_texture_path(self.texture_field.text())
         if self.texture_field.text():
-            self.m_sat.set_rotation_speed(self.rotation_speed_spin.value())
+            self.m_sat.set_rotation_speed(self.rotation_period_spin.value())
         
         self.done(QDialog.Accepted)
 
@@ -409,3 +416,26 @@ class SatelliteWindow(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Import Error", 
                             f"An error occurred while importing the satellite data: {str(e)}")
+            
+    def update_orbit_preview(self):
+        """Update the orbit preview with current values"""
+        a = self.a_box.value()
+        e = self.e_box.value()
+        self.orbit_preview.update_orbit(a, e)
+
+    def on_preview_changed(self, a, e):
+        """Handle changes from the preview widget"""
+        # Block signals temporarily to prevent infinite loops
+        self.a_box.blockSignals(True)
+        self.e_box.blockSignals(True)
+        
+        self.a_box.setValue(a)
+        self.e_box.setValue(e)
+        
+        # Restore signals
+        self.a_box.blockSignals(False)
+        self.e_box.blockSignals(False)
+        
+        # Update other dependent fields
+        self.on_a_changed(a)
+        self.on_e_changed(e)
