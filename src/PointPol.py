@@ -9,14 +9,22 @@ class PointPol(Point):
     
     def __init__(self, r=0.0, theta=0.0, phi=0.0):
         super(PointPol, self).__init__()
-        self.m_r = r
-        self.m_theta = theta
-        self.m_phi = phi
+        self.m_r = float(r) if r is not None else 0.0
+        self.m_theta = float(theta) if theta is not None else 0.0
+        self.m_phi = float(phi) if phi is not None else 0.0
     
     def __init_from_point(self, p):
         self.m_r = p.get_r()
         self.m_theta = p.get_theta()
         self.m_phi = p.get_phi()
+        self.m_r = float(self.m_r) if self.m_r is not None else 0.0
+        self.m_theta = float(self.m_theta) if self.m_theta is not None else 0.0
+        self.m_phi = float(self.m_phi) if self.m_phi is not None else 0.0
+    
+    def valid_params(self):
+        self.m_r = float(self.m_r) if self.m_r is not None else 0.0
+        self.m_theta = float(self.m_theta) if self.m_theta is not None else 0.0
+        self.m_phi = float(self.m_phi) if self.m_phi is not None else 0.0
     
     # Python's special methods for operator overloading
     def __eq__(self, p):
@@ -34,6 +42,7 @@ class PointPol(Point):
         self.m_r = copy.m_r
         self.m_theta = copy.m_theta
         self.m_phi = copy.m_phi
+        self.valid_params()
         return self
     
     def __isub__(self, p):
@@ -46,20 +55,31 @@ class PointPol(Point):
         self.m_r = copy.m_r
         self.m_theta = copy.m_theta
         self.m_phi = copy.m_phi
+        self.valid_params()
         return self
     
     def __add__(self, p):
         copy = PointPol(0)
         copy.__init_from_point(self)
         copy += p
+        self.valid_params()
         return copy
     
     def __sub__(self, p):
-        copy = PointPol(0)
-        copy.__init_from_point(self)
-        copy -= p
-        return copy
-    
+        if p is None:
+            return PointPol(self.m_r, self.m_theta, self.m_phi)
+            
+        # Convert to Cartesian
+        self_cart = PointCart(self)
+        p_cart = PointCart(p)
+        
+        # Calculate difference
+        diff = PointCart(
+            self_cart.get_x() - p_cart.get_x(),
+            self_cart.get_y() - p_cart.get_y(),
+            self_cart.get_z() - p_cart.get_z()
+        )
+        return PointPol(diff)
     # Getter and setter methods
     def get_r(self):
         """Get radius"""

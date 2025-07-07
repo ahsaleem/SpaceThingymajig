@@ -11,7 +11,6 @@ class ConfigManager:
         self._ensure_config_exists()
     
     def _ensure_config_exists(self):
-        """Ensure the config directory and file exist"""
         try:
             self.config_dir.mkdir(exist_ok=True)
             if not self.config_file.exists():
@@ -21,7 +20,6 @@ class ConfigManager:
             logging.error(f"Error creating config directory: {str(e)}")
     
     def load_config(self):
-        """Load configuration from file"""
         try:
             if self.config_file.exists():
                 with open(self.config_file, 'r') as f:
@@ -31,7 +29,6 @@ class ConfigManager:
             self.config = {}
     
     def save_config(self):
-        """Save configuration to file"""
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=4)
@@ -39,11 +36,9 @@ class ConfigManager:
             logging.error(f"Error saving config: {str(e)}")
     
     def get_api_key(self):
-        """Get the N2YO API key"""
         return self.config.get('n2yo_api_key', '')
     
     def set_api_key(self, api_key):
-        """Set the N2YO API key"""
         self.config['n2yo_api_key'] = api_key
         self.save_config()
         # Update environment variable

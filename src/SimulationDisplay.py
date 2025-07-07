@@ -7,12 +7,14 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 
 from src.SatelliteWindow import SatelliteWindow
+from src.Orbit import Orbit
 from src.SimulationGL import SimulationGL
 from src.Simulation import Simulation
 from src.GuiConstants import GuiConstants
 from src.Constants import Constants
 from src.TrackBallCamera import TrackBallCamera
 from src.PointPol import PointPol
+from src.CameraControlWindow import CameraControlWindow 
 import math
 
 class SimulationDisplay(SimulationGL):
@@ -44,6 +46,8 @@ class SimulationDisplay(SimulationGL):
         self.is_dragging = False
         self.highlighted_sat = None  # Track highlighted satellite
         self.loaded_textures = {}
+        self.light_intensity = 1.0
+        self.light_color = [1.0, 1.0, 1.0]
         
         # Always initialize the camera
         self.m_camera = TrackBallCamera()
@@ -118,7 +122,27 @@ class SimulationDisplay(SimulationGL):
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LEQUAL)
         glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST)
-    
+
+        self.update_lighting()
+
+    def update_lighting(self):
+        diffuse = [c * self.light_intensity for c in self.light_color]
+        ambient = [c * 0.2 * self.light_intensity for c in self.light_color]  # 20% of diffuse
+        
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, (*diffuse, 1.0))
+        glLightfv(GL_LIGHT0, GL_AMBIENT, (*ambient, 1.0))
+        glLightfv(GL_LIGHT0, GL_SPECULAR, (*diffuse, 1.0))
+        
+        # Update light position if not using planet as light source
+        if hasattr(self.m_sim, 'get_planet'):
+            if not self.m_sim.get_planet().is_light_source():
+                sun_distance = 100.0
+                sun_angle = 360.0 * (math.fmod(self.m_sim.t, self.m_sim.get_planet().get_day()) 
+                                / self.m_sim.get_planet().get_day())
+                sun_x = sun_distance * math.cos(math.radians(sun_angle))
+                sun_y = sun_distance * math.sin(math.radians(sun_angle))
+                glLightfv(GL_LIGHT0, GL_POSITION, (sun_x, sun_y, 0.0, 1.0))
+            
     def resizeGL(self, width, height):
         """
         Handle window resize events
@@ -205,20 +229,49 @@ class SimulationDisplay(SimulationGL):
     
     def paintGL(self):
         """Render the OpenGL scene"""
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
         
         if self.m_sim is not None:
             self.m_camera.look()
             
-            # Position the sun (light source)
-            sun_distance = 100.0  # Arbitrary distance for the sun
-            sun_angle = 360.0 * (math.fmod(self.m_sim.t, self.m_sim.get_planet().get_day()) 
-                               / self.m_sim.get_planet().get_day())
-            sun_x = sun_distance * math.cos(math.radians(sun_angle))
-            sun_y = sun_distance * math.sin(math.radians(sun_angle))
-            glLightfv(GL_LIGHT0, GL_POSITION, (sun_x, sun_y, 0.0, 1.0))
-            
+            if self.m_sim.get_planet().is_light_source():
+                planet_radius = self.m_sim.get_planet().get_radius()
+                brightness = min(1.0, planet_radius / Constants.r_earth)
+                
+                # Calculate light direction based on satellite position
+                for i in range(self.m_sim.nsat()):
+                    sat = self.m_sim.sat(i)
+                    pos = sat.get_current_position()
+                    if pos:
+                        # Get vector from planet to satellite
+                        light_dir = (-pos.get_x(), -pos.get_y(), -pos.get_z())
+                        # Normalize the direction vector
+                        length = math.sqrt(light_dir[0]**2 + light_dir[1]**2 + light_dir[2]**2)
+                        if length > 0:
+                            light_dir = (light_dir[0]/length, light_dir[1]/length, light_dir[2]/length)
+                        
+                        # Set up lighting for this satellite
+                        glLightfv(GL_LIGHT0, GL_POSITION, (*light_dir, 0.0))  # Directional light
+                        self.update_lighting()
+                        glLightfv(GL_LIGHT0, GL_SPECULAR, (brightness, brightness, brightness, 1.0))
+                        
+                        # Enable shadows
+                        glEnable(GL_LIGHTING)
+                        glEnable(GL_LIGHT0)
+                        glEnable(GL_DEPTH_TEST)
+            else:
+                sun_distance = 100.0  # Arbitrary distance for the sun
+                sun_angle = 360.0 * (math.fmod(self.m_sim.t, self.m_sim.get_planet().get_day()) 
+                                / self.m_sim.get_planet().get_day())
+                sun_x = sun_distance * math.cos(math.radians(sun_angle))
+                sun_y = sun_distance * math.sin(math.radians(sun_angle))
+                glLightfv(GL_LIGHT0, GL_POSITION, (sun_x, sun_y, 0.0, 1.0))
+            if self.m_sim.get_planet().is_light_source():
+                glMaterialfv(GL_FRONT, GL_EMISSION, (brightness*0.3, brightness*0.3, brightness*0.3, 1.0))
+            else:
+                glMaterialfv(GL_FRONT, GL_EMISSION, (0.0, 0.0, 0.0, 1.0))
             scale_factor = 25.0
             
             # Get maximum RA for window scaling
@@ -274,299 +327,321 @@ class SimulationDisplay(SimulationGL):
             params = gluNewQuadric()
             gluQuadricTexture(params, GL_TRUE)
             
-            # Enable multi-texturing if night texture is available
-            if self.planet_night_texture_path:
-                glActiveTexture(GL_TEXTURE0)
-                glBindTexture(GL_TEXTURE_2D, self.texture[0])  # Day texture
-                glActiveTexture(GL_TEXTURE1)
-                glBindTexture(GL_TEXTURE_2D, self.texture[1])  # Night texture
+            if self.m_sim.get_planet().is_light_source():
+                glDisable(GL_LIGHTING)
+                glDisable(GL_DEPTH_TEST)
                 
-                # Calculate day/night blend factor based on sun position
-                blend_factor = (math.sin(math.radians(sun_angle)) + 1.0) / 2.0
-                glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE)
-                glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE)
-                glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE0)
-                glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR)
-                glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE1)
-                glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR)
-                glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_CONSTANT)
-                glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_COLOR)
-                glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE)
-                glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE0)
-                glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA)
-                glTexEnvf(GL_TEXTURE_ENV, GL_CONSTANT, blend_factor)
-            else:
+                # Draw planet with full brightness
+                glColor3f(1.0, 1.0, 1.0)
                 glBindTexture(GL_TEXTURE_2D, self.texture[0])
+            
+                # Draw the planet sphere
+                gluSphere(params, r, 40, 40)
+                
+                # Re-enable lighting for other objects
+                glEnable(GL_LIGHTING)
+                glEnable(GL_DEPTH_TEST)
+            # Enable multi-texturing if night texture is available
+            else:
+                if self.planet_night_texture_path:
+                    glActiveTexture(GL_TEXTURE0)
+                    glBindTexture(GL_TEXTURE_2D, self.texture[0])  # Day texture
+                    glActiveTexture(GL_TEXTURE1)
+                    glBindTexture(GL_TEXTURE_2D, self.texture[1])  # Night texture
+                    
+                    # Calculate day/night blend factor based on sun position
+                    blend_factor = (math.sin(math.radians(sun_angle)) + 1.0) / 2.0
+                    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE0)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE1)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_CONSTANT)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_COLOR)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE0)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA)
+                    glTexEnvf(GL_TEXTURE_ENV, GL_CONSTANT, blend_factor)
+                else:
+                    glBindTexture(GL_TEXTURE_2D, self.texture[0])
             
             # Rotate to set north pole on top
             glRotatef(-90.0, 1.0, 0.0, 0.0)
             
             # Rotate around Z axis based on time
             angle = 360.0 * (math.fmod(self.m_sim.t, self.m_sim.get_planet().get_day()) 
-                             / self.m_sim.get_planet().get_day())
+                            / self.m_sim.get_planet().get_day())
             glRotatef(angle, 0.0, 0.0, 1.0)
             
             # Draw the planet sphere
             gluSphere(params, r, 40, 40)
             gluDeleteQuadric(params)
             glPopMatrix()
-            
+            if hasattr(self.m_camera, 'tracking_orbit') and self.m_camera.tracking_orbit:
+                self.m_camera.tracking_orbit.update_position(self.m_sim.dt)
             # Draw each satellite
+            
             for i in range(self.m_sim.nsat()):
                 sat = self.m_sim.sat(i)
-                try:
+             
+                pos = sat.get_current_position()
+                if pos is None:
+                    sat.get_orbit().reset()
                     pos = sat.get_current_position()
-                    # Check if this satellite is highlighted
-                    is_highlighted = (sat == self.highlighted_sat)
-                    
-                    # Satellite size, scaled
-                    s = 300.0 * scale * sat.get_size()
-                    
-                    # Get position
-                    pos = sat.get_current_position()
-                    x = float(pos.get_x())
-                    y = float(pos.get_y())
-                    z = float(pos.get_z())
-                    
-                    # Scale position
-                    x *= scale
-                    y *= scale
-                    z *= scale
-                    
-                    # Draw orbit ellipse
-                    self.draw_ellipse(sat.get_orbit(), scale, i, self.m_sim.nsat())
-                    
-                    # Set color based on highlight status
-                    if is_highlighted:
-                        glColor3d(1.0, 1.0, 0.0)  # Yellow highlight
-                        # Draw highlight outline
-                        glPushMatrix()
-                        glTranslatef(y, z, x)
-                        glScalef(1.2, 1.2, 1.2)  # Make highlight slightly larger
-                        
-                        # Draw wireframe box using GL_LINES
-                        glDisable(GL_TEXTURE_2D)
-                        glDisable(GL_LIGHTING)
-                        glLineWidth(2.0)  # Make lines thicker
-                        
-                        glBegin(GL_LINES)
-                        # Front face
-                        glVertex3f(-s, -s, s)
-                        glVertex3f(s, -s, s)
-                        glVertex3f(s, -s, s)
-                        glVertex3f(s, s, s)
-                        glVertex3f(s, s, s)
-                        glVertex3f(-s, s, s)
-                        glVertex3f(-s, s, s)
-                        glVertex3f(-s, -s, s)
-                        
-                        # Back face
-                        glVertex3f(-s, -s, -s)
-                        glVertex3f(s, -s, -s)
-                        glVertex3f(s, -s, -s)
-                        glVertex3f(s, s, -s)
-                        glVertex3f(s, s, -s)
-                        glVertex3f(-s, s, -s)
-                        glVertex3f(-s, s, -s)
-                        glVertex3f(-s, -s, -s)
-                        
-                        # Connecting lines
-                        glVertex3f(-s, -s, s)
-                        glVertex3f(-s, -s, -s)
-                        glVertex3f(s, -s, s)
-                        glVertex3f(s, -s, -s)
-                        glVertex3f(s, s, s)
-                        glVertex3f(s, s, -s)
-                        glVertex3f(-s, s, s)
-                        glVertex3f(-s, s, -s)
-                        glEnd()
-                        
-                        glLineWidth(1.0)  # Reset line width
-                        glEnable(GL_LIGHTING)
-                        glEnable(GL_TEXTURE_2D)
-                        glPopMatrix()
-                    
-                    glColor3d(1.0, 1.0, 1.0)  # Reset color
-                    
-                    # Translate to satellite position
+                    if pos is None:
+                        print(f"Skipping null position for {sat.get_name()}{sat.get_parent().get_name()} {sat.get_planet().get_name()}")
+                        continue
+                # Check if this satellite is highlighted
+                is_highlighted = (sat == self.highlighted_sat)
+                
+                # Satellite size, scaled
+                s = 300.0 * scale * sat.get_size()
+                
+                # Get position
+                pos = sat.get_current_position()
+                x = float(pos.get_x())
+                y = float(pos.get_y())
+                z = float(pos.get_z())
+                
+                # Scale position
+                x *= scale
+                y *= scale
+                z *= scale
+                
+                # Draw orbit ellipse
+                self.draw_ellipse(sat.get_orbit(), scale, i, self.m_sim.nsat())
+                
+                # Set color based on highlight status
+                if is_highlighted:
+                    glColor3d(1.0, 1.0, 0.0)  # Yellow highlight
+                    # Draw highlight outline
+                    glPushMatrix()
                     glTranslatef(y, z, x)
+                    glScalef(1.2, 1.2, 1.2)  # Make highlight slightly larger
                     
-                    # Draw inertial axes at satellite position
+                    # Draw wireframe box using GL_LINES
                     glDisable(GL_TEXTURE_2D)
+                    glDisable(GL_LIGHTING)
+                    glLineWidth(2.0)  # Make lines thicker
+                    
                     glBegin(GL_LINES)
+                    # Front face
+                    glVertex3f(-s, -s, s)
+                    glVertex3f(s, -s, s)
+                    glVertex3f(s, -s, s)
+                    glVertex3f(s, s, s)
+                    glVertex3f(s, s, s)
+                    glVertex3f(-s, s, s)
+                    glVertex3f(-s, s, s)
+                    glVertex3f(-s, -s, s)
                     
-                    # Inertial X (red)
-                    glColor3d(1.0, 0.0, 0.0)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(0.0, 0.0, 3.0 * s)
+                    # Back face
+                    glVertex3f(-s, -s, -s)
+                    glVertex3f(s, -s, -s)
+                    glVertex3f(s, -s, -s)
+                    glVertex3f(s, s, -s)
+                    glVertex3f(s, s, -s)
+                    glVertex3f(-s, s, -s)
+                    glVertex3f(-s, s, -s)
+                    glVertex3f(-s, -s, -s)
                     
-                    # Inertial Y (green)
-                    glColor3d(0.0, 1.0, 0.0)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(3.0 * s, 0.0, 0.0)
+                    # Connecting lines
+                    glVertex3f(-s, -s, s)
+                    glVertex3f(-s, -s, -s)
+                    glVertex3f(s, -s, s)
+                    glVertex3f(s, -s, -s)
+                    glVertex3f(s, s, s)
+                    glVertex3f(s, s, -s)
+                    glVertex3f(-s, s, s)
+                    glVertex3f(-s, s, -s)
+                    glEnd()
                     
-                    # Inertial Z (blue)
-                    glColor3d(0.0, 0.0, 1.0)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(0.0, 3.0 * s, 0.0)
+                    glLineWidth(1.0)  # Reset line width
+                    glEnable(GL_LIGHTING)
+                    glEnable(GL_TEXTURE_2D)
+                    glPopMatrix()
+                
+                glColor3d(1.0, 1.0, 1.0)  # Reset color
+                
+                # Translate to satellite position
+                glTranslatef(y, z, x)
+                
+                # Draw inertial axes at satellite position
+                glDisable(GL_TEXTURE_2D)
+                glBegin(GL_LINES)
+                
+                # Inertial X (red)
+                glColor3d(1.0, 0.0, 0.0)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(0.0, 0.0, 3.0 * s)
+                
+                # Inertial Y (green)
+                glColor3d(0.0, 1.0, 0.0)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(3.0 * s, 0.0, 0.0)
+                
+                # Inertial Z (blue)
+                glColor3d(0.0, 0.0, 1.0)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(0.0, 3.0 * s, 0.0)
+                
+                glEnd()
+                glColor3d(1.0, 1.0, 1.0)
+                glEnable(GL_TEXTURE_2D)
+                
+                # Rotate according to satellite attitude
+                angle1 = 180.0 / Constants.pi * self.m_sim.sat(i).get_ry()
+                angle2 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rz()
+                angle3 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rx()
+                
+                glRotatef(angle1, 1.0, 0.0, 0.0)
+                glRotatef(angle2, 0.0, 1.0, 0.0)
+                glRotatef(angle3, 0.0, 0.0, 1.0)
+                
+                # Draw satellite axes
+                glDisable(GL_TEXTURE_2D)
+                glBegin(GL_LINES)
+                
+                # Satellite X (light red)
+                glColor3d(1.0, 0.5, 0.5)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(0.0, 0.0, 3.0 * s)
+                
+                # Satellite Y (light green)
+                glColor3d(0.5, 1.0, 0.5)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(3.0 * s, 0.0, 0.0)
+                
+                # Satellite Z (light blue)
+                glColor3d(0.5, 0.5, 1.0)
+                glVertex3d(0.0, 0.0, 0.0)
+                glVertex3d(0.0, 3.0 * s, 0.0)
+                
+                glEnd()
+                glColor3d(1.0, 1.0, 1.0)
+                glEnable(GL_TEXTURE_2D)
+                if sat.has_texture():
+                    # Load texture if needed
+                    tex_path = sat.get_texture_path()
+                    if tex_path not in self.loaded_textures:
+                        self._load_texture(tex_path)
+                    glPushMatrix()  # Save current matrix state
+                    glBindTexture(GL_TEXTURE_2D, self.loaded_textures[tex_path])
+                    quadric = gluNewQuadric()
+                    gluQuadricTexture(quadric, GL_TRUE)
+                    if sat.get_rx() != 0:
+                        glRotatef(math.degrees(sat.get_rotation()), 1, 0, 0)
+                    elif sat.get_ry() != 0:
+                        glRotatef(math.degrees(sat.get_rotation()), 0, 1, 0)
+                    else:  # Default to Z-axis
+                        glRotatef(math.degrees(sat.get_rotation()), 0, 0, 1)
+                    gluSphere(quadric, s/2, 32, 32)
+                    gluDeleteQuadric(quadric)
+                    glPopMatrix()
+                else:
+                # Draw satellite body
+                    glBindTexture(GL_TEXTURE_2D, self.texture[2])
+                    glBegin(GL_QUADS)
+                    
+                    # Front face
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(-1.0 * s, -1.0 * s, s)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(s, -1.0 * s, s)
+                    glTexCoord2f(s, s)
+                    glVertex3f(s, s, s)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(-1.0 * s, s, s)
+                    
+                    # Back face
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                    glTexCoord2f(s, s)
+                    glVertex3f(-1.0 * s, s, -1.0 * s)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(s, s, -1.0 * s)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(s, -1.0 * s, -1.0 * s)
+                    
+                    # Top face
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(-1.0 * s, s, -1.0 * s)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(-1.0 * s, s, s)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(s, s, s)
+                    glTexCoord2f(s, s)
+                    glVertex3f(s, s, -1.0 * s)
+                    
+                    # Bottom face
+                    glTexCoord2f(s, s)
+                    glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(s, -1.0 * s, -1.0 * s)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(s, -1.0 * s, s)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(-1.0 * s, -1.0 * s, s)
+                    
+                    # Right face
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(s, -1.0 * s, -1.0 * s)
+                    glTexCoord2f(s, s)
+                    glVertex3f(s, s, -1.0 * s)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(s, s, s)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(s, -1.0 * s, s)
+                    
+                    # Left face
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(-1.0 * s, -1.0 * s, s)
+                    glTexCoord2f(s, s)
+                    glVertex3f(-1.0 * s, s, s)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(-1.0 * s, s, -1.0 * s)
                     
                     glEnd()
-                    glColor3d(1.0, 1.0, 1.0)
-                    glEnable(GL_TEXTURE_2D)
                     
-                    # Rotate according to satellite attitude
-                    angle1 = 180.0 / Constants.pi * self.m_sim.sat(i).get_ry()
-                    angle2 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rz()
-                    angle3 = 180.0 / Constants.pi * self.m_sim.sat(i).get_rx()
+                    # Draw solar panels
+                    glBindTexture(GL_TEXTURE_2D, self.texture[3])
                     
-                    glRotatef(angle1, 1.0, 0.0, 0.0)
-                    glRotatef(angle2, 0.0, 1.0, 0.0)
-                    glRotatef(angle3, 0.0, 0.0, 1.0)
-                    
-                    # Draw satellite axes
-                    glDisable(GL_TEXTURE_2D)
-                    glBegin(GL_LINES)
-                    
-                    # Satellite X (light red)
-                    glColor3d(1.0, 0.5, 0.5)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(0.0, 0.0, 3.0 * s)
-                    
-                    # Satellite Y (light green)
-                    glColor3d(0.5, 1.0, 0.5)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(3.0 * s, 0.0, 0.0)
-                    
-                    # Satellite Z (light blue)
-                    glColor3d(0.5, 0.5, 1.0)
-                    glVertex3d(0.0, 0.0, 0.0)
-                    glVertex3d(0.0, 3.0 * s, 0.0)
-                    
+                    # Left panel
+                    glBegin(GL_QUADS)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(-5.0 * s, -0.8 * s, 0.0)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(-1.2 * s, -0.8 * s, 0.0)
+                    glTexCoord2f(s, s)
+                    glVertex3f(-1.2 * s, 0.8 * s, 0.0)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(-5.0 * s, 0.8 * s, 0.0)
                     glEnd()
-                    glColor3d(1.0, 1.0, 1.0)
-                    glEnable(GL_TEXTURE_2D)
-                    if sat.has_texture():
-                        # Load texture if needed
-                        tex_path = sat.get_texture_path()
-                        if tex_path not in self.loaded_textures:
-                            self._load_texture(tex_path)
-                        glPushMatrix()  # Save current matrix state
-                        glBindTexture(GL_TEXTURE_2D, self.loaded_textures[tex_path])
-                        quadric = gluNewQuadric()
-                        gluQuadricTexture(quadric, GL_TRUE)
-                        if sat.get_rx() != 0:
-                            glRotatef(math.degrees(sat.get_rotation()), 1, 0, 0)
-                        elif sat.get_ry() != 0:
-                            glRotatef(math.degrees(sat.get_rotation()), 0, 1, 0)
-                        else:  # Default to Z-axis
-                            glRotatef(math.degrees(sat.get_rotation()), 0, 0, 1)
-                        gluSphere(quadric, s/2, 32, 32)
-                        gluDeleteQuadric(quadric)
-                        glPopMatrix()
-                    else:
-                    # Draw satellite body
-                        glBindTexture(GL_TEXTURE_2D, self.texture[2])
-                        glBegin(GL_QUADS)
-                        
-                        # Front face
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(-1.0 * s, -1.0 * s, s)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(s, -1.0 * s, s)
-                        glTexCoord2f(s, s)
-                        glVertex3f(s, s, s)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(-1.0 * s, s, s)
-                        
-                        # Back face
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                        glTexCoord2f(s, s)
-                        glVertex3f(-1.0 * s, s, -1.0 * s)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(s, s, -1.0 * s)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(s, -1.0 * s, -1.0 * s)
-                        
-                        # Top face
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(-1.0 * s, s, -1.0 * s)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(-1.0 * s, s, s)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(s, s, s)
-                        glTexCoord2f(s, s)
-                        glVertex3f(s, s, -1.0 * s)
-                        
-                        # Bottom face
-                        glTexCoord2f(s, s)
-                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(s, -1.0 * s, -1.0 * s)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(s, -1.0 * s, s)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(-1.0 * s, -1.0 * s, s)
-                        
-                        # Right face
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(s, -1.0 * s, -1.0 * s)
-                        glTexCoord2f(s, s)
-                        glVertex3f(s, s, -1.0 * s)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(s, s, s)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(s, -1.0 * s, s)
-                        
-                        # Left face
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(-1.0 * s, -1.0 * s, -1.0 * s)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(-1.0 * s, -1.0 * s, s)
-                        glTexCoord2f(s, s)
-                        glVertex3f(-1.0 * s, s, s)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(-1.0 * s, s, -1.0 * s)
-                        
-                        glEnd()
-                        
-                        # Draw solar panels
-                        glBindTexture(GL_TEXTURE_2D, self.texture[3])
-                        
-                        # Left panel
-                        glBegin(GL_QUADS)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(-5.0 * s, -0.8 * s, 0.0)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(-1.2 * s, -0.8 * s, 0.0)
-                        glTexCoord2f(s, s)
-                        glVertex3f(-1.2 * s, 0.8 * s, 0.0)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(-5.0 * s, 0.8 * s, 0.0)
-                        glEnd()
-                        
-                        # Right panel
-                        glBegin(GL_QUADS)
-                        glTexCoord2f(0.0, 0.0)
-                        glVertex3f(1.2 * s, -0.8 * s, 0.0)
-                        glTexCoord2f(s, 0.0)
-                        glVertex3f(5.0 * s, -0.8 * s, 0.0)
-                        glTexCoord2f(s, s)
-                        glVertex3f(5.0 * s, 0.8 * s, 0.0)
-                        glTexCoord2f(0.0, s)
-                        glVertex3f(1.2 * s, 0.8 * s, 0.0)
-                        glEnd()
-                        
-                    # Rotate back to draw next satellite
-                    glRotatef(-angle3, 0.0, 0.0, 1.0)
-                    glRotatef(-angle2, 0.0, 1.0, 0.0)
-                    glRotatef(-angle1, 1.0, 0.0, 0.0)
                     
-                    # Translate back to draw next satellite
-                    glTranslatef(-y, -z, -x)
-                except Exception as e:
-                    print(f"Error rendering satellite {sat.get_name()}: {str(e)}")
-    
+                    # Right panel
+                    glBegin(GL_QUADS)
+                    glTexCoord2f(0.0, 0.0)
+                    glVertex3f(1.2 * s, -0.8 * s, 0.0)
+                    glTexCoord2f(s, 0.0)
+                    glVertex3f(5.0 * s, -0.8 * s, 0.0)
+                    glTexCoord2f(s, s)
+                    glVertex3f(5.0 * s, 0.8 * s, 0.0)
+                    glTexCoord2f(0.0, s)
+                    glVertex3f(1.2 * s, 0.8 * s, 0.0)
+                    glEnd()
+                    
+                # Rotate back to draw next satellite
+                glRotatef(-angle3, 0.0, 0.0, 1.0)
+                glRotatef(-angle2, 0.0, 1.0, 0.0)
+                glRotatef(-angle1, 1.0, 0.0, 0.0)
+                
+                # Translate back to draw next satellite
+                glTranslatef(-y, -z, -x)
+                
+
     def sim(self):
         """Get the simulation object"""
         return self.m_sim
@@ -634,6 +709,60 @@ class SimulationDisplay(SimulationGL):
             self.loaded_textures[path] = tex_id
         except Exception as e:
             print(f"Error loading texture {path}: {str(e)}")
+        
+            
+    def open_camera_control(self):
+        """Open the camera control dialog"""
+        if not hasattr(self, 'sim') or self.sim() is None:
+            QMessageBox.warning(self, "No Simulation", 
+                            "Please create or load a simulation first.")
+            return
+            
+        camera_dialog = CameraControlWindow(self, self)
+        camera_dialog.camera_target_changed.connect(self.set_camera_target)
+        camera_dialog.exec_()
+
+    def set_camera_target(self, target_name):
+        if not target_name:  # Empty string or None
+            self.m_camera.set_tracking_target(None)
+            self.update()
+            return
+        
+        sim = self.sim()
+        for i in range(sim.nsat()):
+            if sim.sat(i).get_name() == target_name:
+                # Create position getter with proper scaling
+                def position_getter(idx=i, scale_fn=self._get_current_scale):
+                    pos = sim.sat(idx).get_current_position()
+                    scale = scale_fn()
+                    return (pos.get_x() * scale,
+                            pos.get_y() * scale,
+                            pos.get_z() * scale)
+            
+                self.m_camera.set_tracking_target(position_getter)
+                self.m_camera.camera_distance = 30.0  # Reset to default
+                self.update()
+                return
+        # If we get here, the satellite wasn't found
+        QMessageBox.warning(self, "Target Not Found", 
+                        f"Could not find satellite named '{target_name}'")
+
+    def _get_current_scale(self):
+        """Helper to get the current scale factor used in rendering"""
+        if not hasattr(self, 'sim') or self.sim() is None:
+            return 1.0
+            
+        scale_factor = 25.0
+        ra_max = 0.0
+        sim = self.sim()
+        for i in range(sim.nsat()):
+            ra = sim.sat(i).get_orbit().get_ra()
+            if ra_max < ra:
+                ra_max = ra
+        if ra_max == 0.0:
+            ra_max = sim.get_planet().get_radius() * 3.0
+        return float(scale_factor / ra_max)
+        
     def mousePressEvent(self, event):
         """
         Handle mouse press events
@@ -850,5 +979,11 @@ class SimulationDisplay(SimulationGL):
                     self.m_selected_sat = None
                     self.satellite_selected.emit(None)
     
+    def handle_light_settings(self, intensity, color):
+        """Ensure changes are applied immediately"""
+        self.light_intensity = intensity
+        self.light_color = color
+        self.update_lighting()
+        self.update()
     def mouseDoubleClickEvent(self, event):
         pass

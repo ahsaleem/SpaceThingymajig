@@ -18,14 +18,39 @@ class TrackBallCamera:
         self.m_scroll_sens = 0.05
         self.m_motion_sens = 0.15
         self.m_last_pos = QPoint()
+        self.tracking_target = None
+        self.tracking_offset = 1.5  # Distance multiplier
+        self.base_distance = 30.0
+        
+    def set_tracking_target(self, target_getter):
+        """Set the satellite to track"""
+        self.tracking_target = target_getter
     
     def look(self):
         """Set the camera viewing transformation"""
-        gluLookAt(0.0, 0.0, self.m_dist,
-                  0.0, 0.0, 0.0,
-                  0.0, 1.0, 0.0)
-        glRotated(self.m_x_angle, 1.0, 0.0, 0.0)
-        glRotated(self.m_y_angle, 0.0, 1.0, 0.0)
+        if self.tracking_target:
+            # Get scaled satellite position
+            target_pos = self.tracking_target()
+            
+            # Calculate camera position (orbit around planet while tracking satellite)
+            cam_x = target_pos[0] * self.tracking_offset
+            cam_y = target_pos[1] + self.base_distance/2
+            cam_z = target_pos[2] * self.tracking_offset
+            
+            gluLookAt(
+                cam_x, cam_y, cam_z,  # Camera position
+                0, 0, 0,              # Always look at planet center
+                0, 1, 0               # Standard up vector
+            )
+            
+            # Apply user rotations
+            glRotated(self.m_x_angle, 1, 0, 0)
+            glRotated(self.m_y_angle, 0, 1, 0)
+        else:
+            # Original planet-view code
+            gluLookAt(0, 0, self.m_dist, 0, 0, 0, 0, 1, 0)
+            glRotated(self.m_x_angle, 1, 0, 0)
+            glRotated(self.m_y_angle, 0, 1, 0)
     
     def on_mouse_motion(self, event):
         """

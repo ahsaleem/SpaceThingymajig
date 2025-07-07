@@ -86,7 +86,8 @@ class PointCart(Point):
         if self.m_x > 0.0 and self.m_y < 0.0:
             return Constants.twopi + math.atan(self.m_y / self.m_x)
         return 0.0
-    
+    def get_phi(self):
+        return super().get_phi()
     def print(self):
         """Print the point coordinates"""
         print(f"Cartesian Point: x={self.m_x}, y={self.m_y}, z={self.m_z}")

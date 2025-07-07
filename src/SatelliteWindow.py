@@ -19,7 +19,7 @@ class SatelliteWindow(QDialog):
     Dialog for configuring a satellite in the simulation
     """
     
-    def __init__(self, is_new, sat, planet, parent=None):
+    def __init__(self, is_new, sat, planet, simulation = None, parent=None):
         """
         Initialize the satellite configuration dialog
         
@@ -27,6 +27,7 @@ class SatelliteWindow(QDialog):
             is_new (bool): True if creating a new satellite, False if editing
             sat (Satellite): The satellite to configure
             planet (Planet): The planet the satellite orbits
+            simulation (Simulation, optional): Current simulation. Defaults to None.
             parent (QWidget, optional): Parent widget. Defaults to None.
         """
         super(SatelliteWindow, self).__init__(parent)
@@ -34,10 +35,11 @@ class SatelliteWindow(QDialog):
         self.m_is_new = is_new
         self.m_sat = sat
         self.m_planet = planet
+        self.m_simulation = simulation
 
         self.setModal(True)
         self.setWindowTitle("Configure satellite")
-        self.setFixedSize(500, 700)  # Fixed size for scrollable window
+        self.setFixedSize(520, 700)  # Fixed size for scrollable window
 
         # Outer layout that contains everything
         outer_layout = QVBoxLayout(self)
@@ -65,13 +67,36 @@ class SatelliteWindow(QDialog):
         
         # General information section
         self.sat_name_field = QLineEdit()
-        
+        self.sat_form.addRow("Satellite name:", self.sat_name_field)
         # Set validator to prevent spaces and brackets
         filter_regex = QRegExp("^[^/\\[\\] ]+$")
         validator = QRegExpValidator(filter_regex)
         self.sat_name_field.setValidator(validator)
-        
-        self.sat_form.addRow("Satellite name:", self.sat_name_field)
+        if is_new:
+            self.parent_body_group = QGroupBox("Parent Body")
+            self.parent_body_layout = QFormLayout()
+            
+            self.parent_type_combo = QComboBox()
+            self.parent_type_combo.addItem("Planet", "planet")
+            self.parent_type_combo.addItem("Satellite", "satellite")
+            self.parent_body_layout.addRow("Parent type:", self.parent_type_combo)
+            
+            self.parent_sat_combo = QComboBox()
+            self.parent_sat_combo.setEnabled(False)  # Disabled by default (planet selected)
+            
+            # Populate satellite list if we have a simulation
+            if self.m_simulation:
+                for i in range(self.m_simulation.nsat()):
+                    sat = self.m_simulation.sat(i)
+                    self.parent_sat_combo.addItem(sat.get_name(), sat)
+            
+            self.parent_body_layout.addRow("Parent satellite:", self.parent_sat_combo)
+            
+            # Connect signal to enable/disable satellite combo
+            self.parent_type_combo.currentTextChanged.connect(self.on_parent_type_changed)
+            
+            self.parent_body_group.setLayout(self.parent_body_layout)
+            self.sat_form.addRow(self.parent_body_group)
         self.import_button = QPushButton("Import satellite")
         self.sat_form.addWidget(self.import_button)
 
@@ -139,7 +164,7 @@ class SatelliteWindow(QDialog):
         self.tp_box.setToolTip(f"[{self.tp_box.minimum()}, {self.tp_box.maximum()}]")
         self.orb_form.addRow("Epoch (s) - can be negative:", self.tp_box)
 
-        self.orbit_preview = OrbitPreviewWidget(planet)
+        self.orbit_preview = OrbitPreviewWidget(self.m_planet)
         self.orbit_preview.setMinimumSize(300, 300)
         self.orb_form.addRow(self.orbit_preview)
     
@@ -147,40 +172,47 @@ class SatelliteWindow(QDialog):
         self.e_box.valueChanged.connect(self.update_orbit_preview)
         
         self.orbit_preview.orbit_changed.connect(self.on_preview_changed)
-        # Attitude section
+
         self.rx_box = QDoubleSpinBox()
-        self.rx_box.setDecimals(4)
-        self.rx_box.setSingleStep(0.1)
-        self.rx_box.setMinimum(0.0)
-        self.rx_box.setMaximum(Constants.twopi)
-        self.rx_box.setToolTip(f"[{self.rx_box.minimum()}, {self.rx_box.maximum()}]")
-        self.att_form.addRow("Rotation around X axis (rad):", self.rx_box)
-        
+        self.rx_box.setRange(-360, 360)  # Degrees for user input
+        self.rx_box.setDecimals(1)
+        self.rx_box.setSuffix("°")
+        self.rx_box.valueChanged.connect(self.update_attitude)
+        self.att_form.addRow("Rotation X:", self.rx_box)
+
         # Rotation around Y
         self.ry_box = QDoubleSpinBox()
-        self.ry_box.setDecimals(4)
-        self.ry_box.setSingleStep(0.1)
-        self.ry_box.setMinimum(0.0)
-        self.ry_box.setMaximum(Constants.twopi)
-        self.ry_box.setToolTip(f"[{self.ry_box.minimum()}, {self.ry_box.maximum()}]")
-        self.att_form.addRow("Rotation around Y axis (rad):", self.ry_box)
-        
+        self.ry_box.setRange(-360, 360)
+        self.ry_box.setDecimals(1)
+        self.ry_box.setSuffix("°")
+        self.ry_box.valueChanged.connect(self.update_attitude)
+        self.att_form.addRow("Rotation Y:", self.ry_box)
+
         # Rotation around Z
         self.rz_box = QDoubleSpinBox()
-        self.rz_box.setDecimals(4)
-        self.rz_box.setSingleStep(0.1)
-        self.rz_box.setMinimum(0.0)
-        self.rz_box.setMaximum(Constants.twopi)
-        self.rz_box.setToolTip(f"[{self.rz_box.minimum()}, {self.rz_box.maximum()}]")
-        self.att_form.addRow("Rotation around Z axis (rad):", self.rz_box)
-        
+        self.rz_box.setRange(-360, 360)
+        self.rz_box.setDecimals(1)
+        self.rz_box.setSuffix("°")
+        self.rz_box.valueChanged.connect(self.update_attitude)
+        self.att_form.addRow("Rotation Z:", self.rz_box)
+        if not is_new:
+            # Convert radians to degrees for display
+            self.rx_box.setValue(math.degrees(self.m_sat.get_rx()))
+            self.ry_box.setValue(math.degrees(self.m_sat.get_ry()))
+            self.rz_box.setValue(math.degrees(self.m_sat.get_rz()))
+        else:
+            # Default to zero rotation
+            self.rx_box.setValue(0)
+            self.ry_box.setValue(0)
+            self.rz_box.setValue(0)
+             
         # Add Appearance group
         self.appearance_group = QGroupBox("Appearance")
         self.appearance_layout = QFormLayout()
         
         # Size control
         self.size_spin = QDoubleSpinBox()
-        self.size_spin.setRange(0.1, 50.0)
+        self.size_spin.setRange(0.1, 1000.0)
         self.size_spin.setSingleStep(0.1)
         self.size_spin.setValue(1.0)
         self.appearance_layout.addRow("Size scaling:", self.size_spin)
@@ -250,7 +282,7 @@ class SatelliteWindow(QDialog):
             else:
                 self.rotation_axis_combo.setCurrentIndex(2)  # Default to Z-axis
                 self.rotation_period_spin.setValue(0.0)
-            # Set existing value if editing
+            # Set existing value if editingz
         scroll_area.setWidget(scroll_content)
         outer_layout.addWidget(scroll_area)
         # Confirm button
@@ -308,6 +340,16 @@ class SatelliteWindow(QDialog):
             pixmap = QPixmap(path)
             self.preview_label.setPixmap(pixmap.scaled(
                 100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            
+    def on_parent_type_changed(self, text):
+        """Enable/disable satellite combo based on parent type selection"""
+        is_satellite = (self.parent_type_combo.currentData() == "satellite")
+        self.parent_sat_combo.setEnabled(is_satellite)
+        
+        # If no satellites available but satellite type selected, show warning
+        if is_satellite and self.parent_sat_combo.count() == 0:
+            QMessageBox.warning(self, "No Satellites", 
+                              "No satellites available to select as parent.")
     @pyqtSlot(float)
     def on_a_changed(self, a):
         """
@@ -370,6 +412,14 @@ class SatelliteWindow(QDialog):
         if self.texture_field.text():
             self.m_sat.set_rotation_speed(self.rotation_period_spin.value())
         
+        self.m_sat.get_orbit().reset()
+        if self.m_is_new and hasattr(self, 'parent_type_combo'):
+            if self.parent_type_combo.currentData() == "satellite":
+                parent = self.parent_sat_combo.currentData()
+                if parent:
+                    self.m_sat.set_parent(parent)
+                    # Force parent position initialization
+                    parent.get_orbit().reset()
         self.done(QDialog.Accepted)
 
     @pyqtSlot()
@@ -439,3 +489,10 @@ class SatelliteWindow(QDialog):
         # Update other dependent fields
         self.on_a_changed(a)
         self.on_e_changed(e)
+
+    def update_attitude(self):
+        """Update the satellite's attitude based on UI controls"""
+        # Convert degrees to radians for internal storage
+        self.m_sat.set_rx(math.radians(self.rx_box.value()))
+        self.m_sat.set_ry(math.radians(self.ry_box.value()))
+        self.m_sat.set_rz(math.radians(self.rz_box.value()))

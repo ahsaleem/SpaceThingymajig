@@ -32,10 +32,26 @@ class Simulation:
     
     def update(self):
         """Update the simulation by one time step"""
+        
         if self.m_play:
             # Add time interval to sim time
             self.sim_t += self.dt
+            for sat in self.m_satellites:
+                if sat.get_parent() is None:
+                    sat.update(self.dt)
+                    # Initialize position if not set
+                    if sat.get_current_position() is None:
+                        sat.get_orbit().reset()
+
             
+            # Then update child satellites
+            for sat in self.m_satellites:
+                if sat.get_parent() is not None:
+                    # Verify parent has valid position
+                    if sat.get_parent().get_current_position() is None:
+                        sat.get_parent().update(0)
+                    sat.update(self.dt)
+
             # Print info if verbose mode is on
             if self.m_verbose:
                 print(f"t = {self.t}")
@@ -45,10 +61,6 @@ class Simulation:
                           f"E = {sat.get_orbit().get_e()} / "
                           f"M = {sat.get_orbit().get_m()}")
                     sat.get_current_position().print()
-            
-            # Update each satellite's orbit and position
-            for sat in self.m_satellites:
-                sat.update(self.dt)
     
     def add_satellite(self, sat):
         """

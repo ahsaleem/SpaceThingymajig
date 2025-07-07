@@ -42,7 +42,10 @@ class OrbitPreviewWidget(QWidget):
 
         # Compute orbit dimensions
         a_px = self.a * scale
-        b_px = self.a * sqrt(1 - self.e**2) * scale
+        try:
+            b_px = self.a * sqrt(1 - self.e**2) * scale
+        except ValueError:
+            b_px = self.a * scale 
         c_px = self.a * self.e * scale
 
         # Orbit ellipse

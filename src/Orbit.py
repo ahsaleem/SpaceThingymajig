@@ -19,7 +19,7 @@ class Orbit:
         """
         self.m_planet = planet
         self.m_mu = planet.get_mu()
-        min_a = planet.get_radius() * 1.1  # 10% above surface
+        min_a = planet.get_radius() * 1.1 if hasattr(planet, 'get_radius') else Constants.r_earth * 1.1
         self.m_a = max(min_a, float(a))
         self.m_e = max(0.0, min(0.99, float(e)))
         
@@ -47,6 +47,8 @@ class Orbit:
         
 
         # Reset position to initial state
+        self.is_relative = False
+        self.relative_orientation = PointPol(0, 0, 0) 
         self.reset()
     
     def __init_from_orbit(self, orbit):
@@ -64,30 +66,53 @@ class Orbit:
     
     def update_position(self, dt):
         # Update mean anomaly
-        new_M = math.fmod(self.m_M + self.get_n() * dt, Constants.twopi)
-        if new_M < 0.0:
-            new_M += Constants.twopi
-        # Compute eccentric anomaly E with dichotomy since E - e*sin(E) is crescent
-        eps = 1.0e-6
-        min_val = 0.0
-        max_val = Constants.twopi
-        self.set_m(new_M)
-        while (max_val - min_val) > eps:
-            mid = 0.5 * (max_val + min_val)
-            if self.m_M < mid - self.m_e * math.sin(mid):
-                max_val = mid
-            else:
-                min_val = mid
-        
-        self.m_E = min_val
+        if not self.is_relative:
+            new_M = math.fmod(self.m_M + self.get_n() * dt, Constants.twopi)
+            if new_M < 0.0:
+                new_M += Constants.twopi
+            # Compute eccentric anomaly E with dichotomy since E - e*sin(E) is crescent
+            eps = 1.0e-6
+            min_val = 0.0
+            max_val = Constants.twopi
+            self.set_m(new_M)
+            while (max_val - min_val) > eps:
+                mid = 0.5 * (max_val + min_val)
+                if self.m_M < mid - self.m_e * math.sin(mid):
+                    max_val = mid
+                else:
+                    min_val = mid
+            
+            self.m_E = min_val
         
         # Compute true anomaly v
-        if self.m_E <= Constants.pi:
-            self.m_v = math.acos((math.cos(self.m_E) - self.m_e) / (1.0 - self.m_e * math.cos(self.m_E)))
+            if self.m_E <= Constants.pi:
+                self.m_v = math.acos((math.cos(self.m_E) - self.m_e) / (1.0 - self.m_e * math.cos(self.m_E)))
+            else:
+                self.m_v = Constants.twopi - math.acos((math.cos(self.m_E) - self.m_e) / (1.0 - self.m_e * math.cos(self.m_E)))
         else:
-            self.m_v = Constants.twopi - math.acos((math.cos(self.m_E) - self.m_e) / (1.0 - self.m_e * math.cos(self.m_E)))
-    
-    
+            # For relative orbits, update position relative to parent
+            self._update_relative_position(dt)
+    def _update_relative_position(self, dt):
+        """Maintain position relative to parent"""
+        # Preserve the relative orientation
+        self.m_v = self.relative_orientation.get_theta()
+        self.m_phi = self.relative_orientation.get_phi()
+        
+        # Update anomalies while maintaining relative position
+        self.m_M = math.fmod(self.m_M + self.get_n() * dt, Constants.twopi)
+        self.m_E = self._solve_kepler_equation(self.m_M)
+        
+        # Calculate new position while preserving relative angles
+        r = self.m_a * (1.0 - self.m_e * math.cos(self.m_E))
+        self.relative_orientation.set_r(r)
+
+    def set_relative_to_parent(self, parent_orbit):
+        """Configure this as a relative orbit"""
+        self.is_relative = True
+        # Store initial relative orientation
+        current_pos = self.get_position_point()
+        parent_pos = parent_orbit.get_position_point()
+        self.relative_orientation = current_pos - parent_pos
     def set_m(self, m):
         """
         Set the mean anomaly and update related angles
@@ -127,27 +152,33 @@ class Orbit:
         self.set_m(-self.get_n() * self.m_tp)
     
     def get_position_point(self):
-        r = self.m_a * (1.0 - self.m_e * math.cos(self.m_E))
+        try:
+            r = self.m_a * (1.0 - self.m_e * math.cos(self.m_E))
+            if math.isnan(r) or not math.isfinite(r):
+                r = self.m_a
         
-        theta = math.fmod(
-            self.m_Omega + math.atan2(
-                math.sin(self.m_omega + self.m_v) * math.cos(self.m_i) / 
-                math.sqrt(1.0 - math.pow(math.sin(self.m_omega + self.m_v) * math.sin(self.m_i), 2.0)),
-                math.cos(self.m_omega + self.m_v) / 
-                math.sqrt(1.0 - math.pow(math.sin(self.m_omega + self.m_v) * math.sin(self.m_i), 2.0))
-            ),
-            Constants.twopi
-        )
+            theta = math.fmod(
+                self.m_Omega + math.atan2(
+                    math.sin(self.m_omega + self.m_v) * math.cos(self.m_i) / 
+                    math.sqrt(1.0 - math.pow(math.sin(self.m_omega + self.m_v) * math.sin(self.m_i), 2.0)),
+                    math.cos(self.m_omega + self.m_v) / 
+                    math.sqrt(1.0 - math.pow(math.sin(self.m_omega + self.m_v) * math.sin(self.m_i), 2.0))
+                ),
+                Constants.twopi
+            )
+            
+            if theta < 0.0:
+                theta += Constants.twopi
+            
+            phi = math.fmod(math.asin(math.sin(self.m_i) * math.sin(self.m_omega + self.m_v)), Constants.twopi)
+            
+            if phi < 0.0:
+                phi += Constants.twopi
         
-        if theta < 0.0:
-            theta += Constants.twopi
-        
-        phi = math.fmod(math.asin(math.sin(self.m_i) * math.sin(self.m_omega + self.m_v)), Constants.twopi)
-        
-        if phi < 0.0:
-            phi += Constants.twopi
-        
-        return PointPol(r, theta, phi)
+            return PointPol(r, theta, phi)
+        except Exception as e:
+            print("Error in orbit position calculation", str(e))
+            return PointPol(self.m_a, 0, 0)
     
     def get_point_at(self, m):
         # Normalize M to [0, 2π)
@@ -199,15 +230,19 @@ class Orbit:
         
         return PointPol(r, theta, phi)
     def update(self, dt):
-        """
-        Update orbit for a time step (for perturbations or maneuvers)
-        
-        Args:
-            dt (float): Time step in seconds
-        """
-        # Update orbit (if perturbation or maneuvers)
-        # Currently empty in original implementation
-        pass
+        if not self.is_relative:
+            # Standard absolute orbit update
+            self.m_M = math.fmod(self.m_M + self.get_n() * dt, Constants.twopi)
+            if self.m_M < 0.0:
+                self.m_M += Constants.twopi
+        else:
+            # Relative orbit maintains orientation to parent
+            pass
+            
+        # Always update position
+        self.update_position(dt)
+
+
     
     def to_string(self):
         output = f"a: {self.m_a}\n"

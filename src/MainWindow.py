@@ -5,6 +5,7 @@ from PyQt5.QtGui import QIcon, QCloseEvent, QResizeEvent
 from PyQt5.QtCore import QDateTime, pyqtSlot, Qt
 import os
 import sys
+from functools import partial
 from datetime import datetime
 from src.Propulsion import Propulsion
 from src.SimulationDisplay import SimulationDisplay
@@ -12,6 +13,7 @@ from src.GuiConstants import GuiConstants
 from src.Constants import Constants
 from src.ConfigureWindow import ConfigureWindow
 from src.SatelliteWindow import SatelliteWindow
+from src.CameraControlWindow import CameraControlWindow
 from src.Monitor import Monitor
 from src.Planet import Planet
 from src.Simulation import Simulation
@@ -70,6 +72,7 @@ class MainWindow(QMainWindow):
         self.menu_file = self.menuBar().addMenu("&File")
         self.menu_sim = self.menuBar().addMenu("&Simulation")
         self.menu_sat = self.menuBar().addMenu("&Satellites")
+        self.menu_camera = self.menuBar().addMenu("&Rendering")
         self.menu_help = self.menuBar().addMenu("&?")
         
         
@@ -97,6 +100,7 @@ class MainWindow(QMainWindow):
         self.menu_sim.addAction(self.action_toggle_play)
         self.action_toggle_play.setShortcut("Space")
         
+
         # Set initial text based on autoPlay constant
         if Constants.autoPlay:
             self.action_toggle_play.setText("Pause")
@@ -127,6 +131,13 @@ class MainWindow(QMainWindow):
         self.menu_sat.addAction(action_add_sat)
         action_add_sat.setShortcut("Ctrl+A")
         
+        action_camera_controls = QAction("Camera Controls...", self)
+        self.menu_camera.addAction(action_camera_controls)
+        action_camera_controls.setShortcut("Ctrl+M")  # Optional shortcut
+        action_planet_light = QAction("Planet as Light Source", self, checkable=True)
+        action_planet_light.setChecked(False)  # Default off
+        self.menu_camera.addAction(action_planet_light)
+        
         # Help menu
         action_about = QAction("About", self)
         self.menu_help.addAction(action_about)
@@ -142,9 +153,8 @@ class MainWindow(QMainWindow):
         action_open.triggered.connect(self.open_slot)
         action_save.triggered.connect(self.save_slot)
         action_add_sat.triggered.connect(self.add_satellite_slot)
-        
-        # Connect satellite menu actions
-        self.menu_sat.hovered.connect(self.hovered_satellite_slot)
+        action_camera_controls.triggered.connect(self.open_camera_controls)
+        action_planet_light.triggered.connect(self.toggle_planet_light)
         
     
     
@@ -193,8 +203,8 @@ class MainWindow(QMainWindow):
             orbit = Orbit(planet, a, e, i, omega, omega_small, tp)
             sat = Satellite(orbit, planet, Propulsion())
             
-            sat_window = SatelliteWindow(True, sat, planet)
-            
+            sat_window = SatelliteWindow(True, sat, planet, self.m_sim_display.sim())
+
             if sat_window.exec_():
                 # Check whether satellite with the same name exists, if yes rename it
                 suffix = 1
@@ -259,11 +269,9 @@ class MainWindow(QMainWindow):
             
             for i in range(self.m_sim_display.sim().nsat()):
                 if self.m_sim_display.sim().sat(i).get_name() == self.m_hovered_sat:
-                    sat_window = SatelliteWindow(
-                        False,
-                        self.m_sim_display.sim().sat(i),
-                        self.m_sim_display.sim().get_planet()
-                    )
+                    sat_window = SatelliteWindow(False, self.m_sim_display.sim().sat(i), 
+                           self.m_sim_display.sim().get_planet(),
+                           self.m_sim_display.sim())
                     sat_window.exec_()
                     self.update_sat_menu()
                     return
@@ -603,7 +611,17 @@ class MainWindow(QMainWindow):
         )
         
         return save_question_box.exec_()
-    
+    def open_camera_controls(self):
+        if hasattr(self, 'm_sim_display') and self.m_sim_display is not None:
+            dialog = CameraControlWindow(self.m_sim_display, self)
+            dialog.intensity_slider.setValue(int(self.m_sim_display.light_intensity * 100))
+            
+            # Connect signals
+            dialog.camera_target_changed.connect(self.m_sim_display.set_camera_target)
+            dialog.light_settings_changed.connect(self.m_sim_display.handle_light_settings)
+            
+            dialog.exec_()
+
     def save_simulation(self):
         """Save the current simulation to a file"""
         if self.m_sim_display is not None and self.m_sim_display.sim() is not None:
@@ -654,8 +672,8 @@ class MainWindow(QMainWindow):
                 sat_menu.addAction(conf_action)
                 sat_menu.addAction(rem_action)
                 
-                conf_action.triggered.connect(self.conf_satellite_slot)
-                rem_action.triggered.connect(self.rem_satellite_slot)
+                conf_action.triggered.connect(partial(self.conf_satellite_slot_by_name, self.m_sim_display.sim().sat(i).get_name()))
+                rem_action.triggered.connect(partial(self.rem_satellite_slot_by_name, self.m_sim_display.sim().sat(i).get_name()))
         
         self.menu_sat.addSeparator()
         
@@ -670,6 +688,14 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).resizeEvent(event)
         if self.m_monitor:
             self.m_monitor.on_resize(event.size().width(), event.size().height())
+
+    def conf_satellite_slot_by_name(self, name):
+        self.m_hovered_sat = name
+        self.conf_satellite_slot()
+
+    def rem_satellite_slot_by_name(self, name):
+        self.m_hovered_sat = name
+        self.rem_satellite_slot()
     
     def on_satellite_selected(self, satellite):
         """
@@ -680,3 +706,9 @@ class MainWindow(QMainWindow):
         """
         self.m_selected_sat = satellite
         self.m_sat_info_panel.update_satellite_info(satellite)
+
+    def toggle_planet_light(self, checked):
+        """Toggle whether planet is the light source"""
+        if hasattr(self, 'm_sim_display') and self.m_sim_display.sim():
+            self.m_sim_display.sim().get_planet().set_as_light_source(checked)
+            self.m_sim_display.update()

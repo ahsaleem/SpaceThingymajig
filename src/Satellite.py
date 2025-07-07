@@ -9,7 +9,7 @@ class Satellite:
     Represents a satellite object in the simulation
     """
     
-    def __init__(self, orb, planet, prop, name=""):
+    def __init__(self, orb, planet, prop, name="",parent=None):
         """
         Initialize a satellite
         
@@ -24,6 +24,15 @@ class Satellite:
         self.m_planet = planet
         self.m_prop = prop
         self.m_name = name
+        self.m_orbit.reset()
+        self.m_parent = parent
+        if parent is not None and parent.get_current_position() is None:
+            parent.get_orbit().reset()
+        if parent is not None:
+            # Configure as relative orbit
+            self.m_orbit.set_relative_to_parent(parent.get_orbit())
+            # Initialize relative position
+            self.update(0)
         self.m_rx = 0.0
         self.m_ry = 0.0
         self.m_rz = 0.0
@@ -39,10 +48,19 @@ class Satellite:
         Args:
             dt (float): Time step in seconds
         """
-        # Update orbit
-        self.m_orbit.update(dt)
-        # Update satellite position on its orbit
-        self.m_orbit.update_position(dt)
+        if self.m_parent is not None:
+            # Update relative to parent's current position
+            parent_pos = self.m_parent.get_current_position()
+            if parent_pos:
+                self.m_orbit.update(dt)
+                # Maintain relative position
+                rel_pos = self.m_orbit.get_position_point()
+                self.current_position = parent_pos + rel_pos
+            else:
+                self.m_orbit.update(dt)
+        else:
+            # Standard absolute orbit
+            self.m_orbit.update(dt)
         
         # Only rotate if we have a texture (spherical)
         if self.has_texture():
@@ -127,7 +145,27 @@ class Satellite:
         self.m_rz = rz
     
     def get_current_position(self):
-        return self.m_orbit.get_position_point()
+        
+        """Get position relative to parent (planet or satellite)"""
+        try:
+            # Get position relative to parent
+            pos = self.m_orbit.get_position_point()
+            if pos is None:
+                print(f"Null orbit position for {self.m_name}")
+                return PointPol(0, 0, 0)
+                
+            # If we have a parent satellite, add its position
+            if self.m_parent is not None:
+                parent_pos = self.m_parent.get_current_position()
+                if parent_pos is None:
+                    print(f"Null parent position for {self.m_name}")
+                    return pos
+                return pos + parent_pos
+            return pos
+        except Exception as e:
+            print(f"Error in get_current_position for {self.m_name}: {str(e)}")
+            return PointPol(0, 0, 0)
+        
     def set_texture_path(self, path):
         self.m_texture_path = os.path.abspath(path) if path else ""
         
@@ -135,7 +173,7 @@ class Satellite:
         return self.m_texture_path
         
     def set_size(self, size):
-        self.m_size = max(0.1, min(100.0, float(size)))
+        self.m_size = max(0.1, min(1000.0, float(size)))
         
     def get_size(self):
         return self.m_size
@@ -150,3 +188,9 @@ class Satellite:
         
     def get_rotation_speed(self):
         return self.m_rotation_speed
+
+    def get_parent(self):      
+        return self.m_parent
+    
+    def set_parent(self, parent_sat):
+        self.m_parent = parent_sat

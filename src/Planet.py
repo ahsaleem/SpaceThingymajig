@@ -22,6 +22,7 @@ class Planet:
         self.m_img_path = img_path
         self.m_night_img_path = night_img_path
         self.m_day = day
+        self.m_is_light_source = False
     
     def get_mu(self):
         return self.m_mu
@@ -70,3 +71,9 @@ class Planet:
         output += f"ImgPath: {self.m_img_path}\n"
         output += f"NightImgPath: {self.m_night_img_path}\n"
         return output
+    
+    def set_as_light_source(self, is_light_source):
+        self.m_is_light_source = is_light_source
+        
+    def is_light_source(self):
+        return self.m_is_light_source
